@@ -1804,7 +1804,7 @@ server <- function(input, output, session){
     #delay(1000, system2("powershell", args=""))
   })
   #session$allowReconnect("force")
-} 
+}
 
 ui <- secure_app(ui)
 shinyApp(ui, server)
