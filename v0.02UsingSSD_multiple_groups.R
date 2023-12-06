@@ -911,7 +911,6 @@ server <- function(input, output, session){
     print(final_fls())
     files2fastqc <- unlist(demultiplexed_fls())
     print('printing colDatt$data')
-    if(length(unique(colDatt$Group)) > 2) multiplegroups(1)
     print(colDatt$data)
     print('startingfastqc')
     startingfastqc_command <- paste0(fastqc_powershell, paste(files2fastqc, collapse = " "), ' -o ',  ProjFolderFull(),' 2>> ', ProjFolderFull(), '/dynamic_log.txt; touch ', ProjFolderFull(), '/1stStageFinished')
@@ -1091,6 +1090,36 @@ server <- function(input, output, session){
     return(Reduce(f = '+', p_pbsq))
   })
   
+  observe({
+    if(multiplegroups()==0){
+      shinyjs::hide(id = "DESeq_DEGsMultitab")
+      shinyjs::hide(id = "VolcanoMultitab")
+      shinyjs::hide(id = "GO_multitab")
+      shinyjs::hide(id = "GO_dotplot_multitab")
+      shinyjs::hide(id = "DorotheaMultitab")
+
+      shinyjs::show(id = "DESeq_DEGs")
+      shinyjs::show(id = "Volcano")
+      shinyjs::show(id = "GO")
+      shinyjs::show(id = "GO_dotplot")
+      shinyjs::show(id = "Dorothea")
+    } else {
+      
+      shinyjs::show(id = "DESeq_DEGsMultitab")
+      shinyjs::show(id = "VolcanoMultitab")
+      shinyjs::show(id = "GO_multitab")
+      shinyjs::show(id = "GO_dotplot_multitab")
+      shinyjs::show(id = "DorotheaMultitab")
+      
+      shinyjs::hide(id = "DESeq_DEGs")
+      shinyjs::hide(id = "Volcano")
+      shinyjs::hide(id = "GO")
+      shinyjs::hide(id = "GO_dotplot")
+      shinyjs::hide(id = "Dorothea")
+      
+      
+    }
+  })
   
   observeEvent(input$ProjectName, {
     shinyjs::hide(id = "fastqcstatspanel")
@@ -1104,13 +1133,13 @@ server <- function(input, output, session){
     shinyjs::show(id = "mySearch")
   })
   
-  output$button_rebase_colDatt<-renderUI({
+output$button_rebase_colDatt<-renderUI({
     req(input$groups_specified)
     while(salmon_finished()==0) return({})
-    actionButton(inputId = 'groups_rebase', label = "Rebase the background factor?", icon("paper-plane"))
+  actionButton(inputId = 'groups_rebase', label = "Rebase the background factor?", icon("paper-plane"))
   })
-  
-  
+
+
   observe({
     req(input$groups_specified)
     print("line 913 ok")
@@ -1333,12 +1362,14 @@ server <- function(input, output, session){
         write.table(x = as.data.frame(datt), file = paste0(ProjFolderFull(),"/colData.tsv"), sep = "\t")
         saveRDS(datt, file = paste0(ProjFolderFull(),"/colData.RDS"))
       }
+      if(length(unique(colDatt$data$Group)) > 2) multiplegroups(1)
       print(datt)
       rhandsontable(datt) %>%
         hot_col("Sample", readOnly = TRUE)
     } else {
       datt <- readRDS(file = paste0(ProjFolderFull(),"/colData.RDS"))
       colDatt$data <- datt
+      if(length(unique(colDatt$data$Group)) > 2) multiplegroups(1)
       rhandsontable(datt)
     }
   })
@@ -1481,38 +1512,6 @@ server <- function(input, output, session){
     return(length(resultsNames(res_DEGs_txi_deseq())))
   })
   
-  output$multitab_DEG <- renderUI(do.call(tabsetPanel, c(id='t',lapply(1:(n_contrasts()-1), function(i) {
-    tabPanel(
-      title=paste0("Contrast ", i), 
-      DTOutput(paste0('a',i))
-    )
-  }))))
-  
-  
-  #lapply(1:n, function(j) {
-  #  if(n_contrasts() <=2) output[[paste0('a',j)]] <- NULL else {
-  #    output[[paste0('a',j)]] <- DT::renderDT(res_DEGs_txi_deseq()[[j]], filter = 'top', extensions = 'Buttons', 
-  #                                            options = list(
-  #                                              dom = 'Bfrtip',
-  #                                              buttons = c('copy', 'csv', 'excel', 'pdf', 'print')),
-  #                                            server=FALSE, rownames = FALSE,
-  #                                            caption = htmltools::tags$caption(
-  #                                              style = 'caption-side: bottom; text-align: left;',
-  #                                              'can also be found at  ', htmltools::em(paste0(ProjFolder(),'/DEGs.xlsx'))
-  #                                            )
-  #    )
-  #  }
-  #  return(output)
-  #})
-  
-  
-  output$multitab_Volcano <- renderUI(do.call(tabsetPanel, c(id='t2',lapply(1:(n_contrasts()-1), function(i) {
-    tabPanel(
-      title=paste0("Contrast ", i), 
-      DTOutput(paste0('b',i))
-    )
-  }))))
-  
   
   
   output$DESeq_DEGs <- DT::renderDT({
@@ -1545,7 +1544,7 @@ server <- function(input, output, session){
     return("Enriched terms:")
   })
   
-  output$PCA<- renderPlot({
+  output$PCA <- renderPlot({
     if(salmon_finished()==0) return({})
     p <- plotPCA(DESeq2::vst(txi_deseq()), intgroup="Group")
     p <- p + ggrepel::geom_label_repel(label=colnames(txi_deseq()), max.overlaps = 30)+ theme_classic()
