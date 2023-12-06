@@ -1729,7 +1729,7 @@ output$button_rebase_colDatt<-renderUI({
           } else {
             toRet[[i]] <- enrichGO(gene = res_DEGs_txi_deseq()[[i]][,2], 
                                    keyType = "SYMBOL", 
-                                   OrgDb = OrgDeeBee, 
+                                   OrgDb = OrgDeeBee(), 
                                    ont = "BP", 
                                    pAdjustMethod = "BH", 
                                    qvalueCutoff = 0.05, 
@@ -1746,7 +1746,7 @@ output$button_rebase_colDatt<-renderUI({
         # 1 vs 1 
         toRet <- enrichGO(gene = res_DEGs_txi_deseq()[,2], 
                           keyType = "SYMBOL", 
-                          OrgDb = OrgDeeBee, 
+                          OrgDb = OrgDeeBee(), 
                           ont = "BP", 
                           pAdjustMethod = "BH", 
                           qvalueCutoff = 0.05, 
@@ -2128,7 +2128,7 @@ output$button_rebase_colDatt<-renderUI({
                   panel.grid.major = element_blank(), 
                   panel.grid.minor = element_blank()) +
             xlab("TF")
-          png(paste0(ProjFolderFull(),'/Dorothea_regulons_',tytl[[i]],'300dpi.png'), 
+          png(paste0(ProjFolderFull(),'/Dorothea_regulons_',tytl[[i]],'_300dpi.png'), 
               width = 8, 
               height = 8,
               res = 300, units = 'in')
