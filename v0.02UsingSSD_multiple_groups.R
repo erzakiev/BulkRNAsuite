@@ -1491,6 +1491,7 @@ output$button_fork_project <-renderUI({
         hot_col("Sample", readOnly = TRUE)
     } else {
       datt <- readRDS(file = paste0(ProjFolderFull(),"/colData.RDS"))
+      rownames(datt) <- NULL
       print('loading datt for rHandsonTable')
       print(datt)
       colDatt$data <- datt
@@ -1538,6 +1539,8 @@ output$button_fork_project <-renderUI({
   txi_deseq <- reactive({
     #if(proceedWithLoad()==0){
       if(salmon_finished()==0) return({})
+    print('diagnostic colDatt$data from txi_deseq')
+    print(colDatt$data)
       toRet <- DESeq2::DESeqDataSetFromTximport(txi(), colData = colDatt$data, design = ~Group)
       saveRDS(toRet, file = paste0(ProjFolderFull(),'/txi_deseq.RDS'))
       return(toRet)
@@ -1574,15 +1577,39 @@ output$button_fork_project <-renderUI({
       if(salmon_finished()==0) return({})
       if(length(resultsNames(txi_deseq_deseq()))<=2){
         toRet <- results(txi_deseq_deseq())
+        toRet$log10padj <- log10(toRet$padj)
+        toRet$Significance <- 'Non-significant'
+        toRet$Significance[toRet$padj<0.05] <- 'Significant (padj < 0.05)'
+        
+        toRet2 <- data.frame(ENSEMBL=rownames(toRet), toRet[,1:2], abs_log2FoldChange=abs(toRet[,2]),toRet[,3:ncol(toRet)])
+        annots <- AnnotationDbi::select(OrgDeeBee(), keys=rownames(toRet2), 
+                                        columns="SYMBOL", keytype="ENSEMBL")
+        
+        toRet3 <- merge(annots, toRet2, by.x="ENSEMBL", by.y="ENSEMBL")
+        toRet3 <- toRet3[order(toRet3$padj),]
+        
       }  else {
-        toRet <- list()
+        toRet3 <- toRet <- list()
         for (i in 2:length(resultsNames(txi_deseq_deseq()))){
           toRet[[(i-1)]] <- results(txi_deseq_deseq(), name = resultsNames(txi_deseq_deseq())[i] )
+          toRet[[(i-1)]]$log10padj <- log10( toRet[[(i-1)]]$padj)
+          toRet[[(i-1)]]$Significance <- 'Non-significant'
+          toRet[[(i-1)]]$Significance[ toRet[[(i-1)]]$padj<0.05] <- 'Significant (padj < 0.05)'
+          
+          toRet2 <- data.frame(ENSEMBL=rownames(toRet[[(i-1)]]), toRet[[(i-1)]][,1:2], abs_log2FoldChange=abs(toRet[[(i-1)]][,2]),toRet[[(i-1)]][,3:ncol(toRet[[(i-1)]])])
+          annots <- AnnotationDbi::select(OrgDeeBee(), keys=rownames(toRet2), 
+                                          columns="SYMBOL", keytype="ENSEMBL")
+          
+          toRet3[[(i-1)]] <- merge(annots, toRet2, by.x="ENSEMBL", by.y="ENSEMBL")
+          toRet3[[(i-1)]] <- toRet3[[(i-1)]][order(toRet3[[(i-1)]]$padj),]
+          
         }
-        
+        names(toRet3) <- resultsNames(txi_deseq_deseq())[2:length(resultsNames(txi_deseq_deseq()))]
       }
-      saveRDS(toRet, file = paste0(ProjFolderFull(),'/res_txi_deseq.RDS'))
-      return(toRet)
+      
+      saveRDS(toRet3, file = paste0(ProjFolderFull(),'/res_txi_deseq.RDS'))
+      openxlsx::write.xlsx(toRet3, file = paste0(ProjFolderFull(),'/DEGs_full.xlsx'))
+      return(toRet3)
     #}  else {
     #  print("reading txi_deseq.RDS file")
     #  return(readRDS(paste0(ProjFolderFull(),'/res_txi_deseq.RDS')))
@@ -1592,39 +1619,28 @@ output$button_fork_project <-renderUI({
     #if(proceedWithLoad()==0){
       if(salmon_finished()==0) return({})
       toRet <- res_txi_deseq()
-      if(class(toRet)=="DESeqResults"){
+      print('printing class of res_txi_deseq()')
+      print(class(toRet))
+      if(class(toRet)=="data.frame"){
         toRet <- toRet[which(toRet$padj<0.05),]
         if(nrow(toRet)==0) return({as.data.frame("oops, none significant")})
         toRet <- toRet[order(toRet$padj),]
-        toRet2 <- data.frame(ENSEMBL=rownames(toRet), toRet[,1:2], abs_log2FoldChange=abs(toRet[,2]),toRet[,3:ncol(toRet)])
-        annots <- AnnotationDbi::select(OrgDeeBee(), keys=rownames(toRet2), 
-                                        columns="SYMBOL", keytype="ENSEMBL")
-        
-        toRet3 <- merge(annots, toRet2, by.x="ENSEMBL", by.y="ENSEMBL")
-        openxlsx::write.xlsx(as.data.frame(toRet3), file = paste0(ProjFolderFull(),'/DEGs.xlsx'))
-        saveRDS(toRet3, file = paste0(ProjFolderFull(),'/.RDS'))
-        return(toRet3)
+        openxlsx::write.xlsx(as.data.frame(toRet), file = paste0(ProjFolderFull(),'/DEGs.xlsx'))
+        saveRDS(toRet, file = paste0(ProjFolderFull(),'/.RDS'))
+        return(toRet)
       } else {
-        toRet3 <- list()
         for (i in 1:length(toRet)){
           toRet[[i]] <- toRet[[i]][which(toRet[[i]]$padj<0.05),]
           if(nrow(toRet[[i]])==0){
             toRet[[i]] <- "oops, none significant" 
-            toRet3[[i]] <- toRet[[i]]
           }
           else {
             toRet[[i]] <- toRet[[i]][order(toRet[[i]]$padj),]
-            toRet2 <- data.frame(ENSEMBL=rownames(toRet[[i]]), toRet[[i]][,1:2], abs_log2FoldChange=abs(toRet[[i]][,2]),toRet[[i]][,3:ncol(toRet[[i]])])
-            annots <- AnnotationDbi::select(OrgDeeBee(), keys=rownames(toRet2), 
-                                            columns="SYMBOL", keytype="ENSEMBL")
-            
-            toRet3[[i]] <- merge(annots, toRet2, by.x="ENSEMBL", by.y="ENSEMBL")
-          } 
+           } 
         }
-        names(toRet3) <- names(toRet)
-        openxlsx::write.xlsx(toRet3, file = paste0(ProjFolderFull(),'/DEGs.xlsx'))
-        saveRDS(toRet3, file = paste0(ProjFolderFull(),'/res_DEGs_txi_deseq.RDS'))
-        return(toRet3)
+        openxlsx::write.xlsx(toRet, file = paste0(ProjFolderFull(),'/DEGs.xlsx'))
+        saveRDS(toRet, file = paste0(ProjFolderFull(),'/res_DEGs_txi_deseq.RDS'))
+        return(toRet)
       }
     #}
     #else {
@@ -1654,11 +1670,19 @@ output$button_fork_project <-renderUI({
     #req(input$groups_specified)
     if(salmon_finished()==0) return({})
     if(multiplegroups()==1) return({})
-    datatable(res_DEGs_txi_deseq(), filter = 'top', extensions = 'Buttons', 
-              options = list(dom = "Bl<'search'>rtip",
-                             buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), callback = JS(callback))},
-    server=FALSE, rownames = FALSE
-  )
+    
+    datatable(as.data.frame(res_txi_deseq()), filter = 'top', extensions = 'Buttons', 
+                     options = list(
+                       dom = "Bl<'search'>rtip",
+                       buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                       searchCols = list(NULL, NULL, NULL, NULL,
+                                         NULL, NULL, NULL, NULL, NULL, NULL, NULL, list(search = 'Significant (padj < 0.05)'))
+                       ),
+              callback = JS(callback))
+              },
+              server=FALSE, rownames = FALSE
+    
+)
   
   output$DESeq_DEGsMultitab <- renderUI({
     #req(input$groups_specified)
@@ -1666,10 +1690,16 @@ output$button_fork_project <-renderUI({
     if(multiplegroups()==0) return({})
     nTabs = length(res_DEGs_txi_deseq())
     
-    myTabs = lapply(1: nTabs, function(x){tabPanel(strsplit(res_txi_deseq()[[x]]@elementMetadata[5,2], split = ": ")[[1]][2], renderDT(datatable(res_DEGs_txi_deseq()[[x]], filter = 'top', extensions = 'Buttons', 
-                                                                                                                                                 options = list(dom = "Blrtip",
-                                                                                                                                                                buttons = c('copy', 'csv', 'excel', 'pdf', 'print')), callback = JS(callback)),
-                                                                                                                                       server=FALSE, rownames = FALSE))});
+    myTabs = lapply(1: nTabs, function(x){
+      tabPanel(paste(strsplit(names(res_txi_deseq()[x]), split = "_")[[1]][2:4], collapse=' '), 
+               renderDT({datatable(res_txi_deseq()[[x]], filter = 'top', extensions = 'Buttons', 
+                                  options = list(dom = "Blrtip",
+                                                 buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                                                 searchCols = list(NULL, NULL, NULL, NULL,
+                                                                   NULL, NULL, NULL, NULL, NULL, NULL, NULL, list(search = 'Significant (padj < 0.05)'))
+                                                 ), callback = JS(callback),
+                        )},
+                        server=FALSE, rownames = FALSE))});
     return(do.call(tabsetPanel, myTabs))
   })
   
@@ -1736,11 +1766,9 @@ output$button_fork_project <-renderUI({
     print('printing the current multiplegroups value line 1583')
     print(multiplegroups())
     if(multiplegroups()==1) return({})
-    res_txi_deseq() -> rez
-    rez <- data.frame(ENSEMBL=rownames(rez), rez)
-    annots <- AnnotationDbi::select(OrgDeeBee(), keys=rez$ENSEMBL, 
-                                    columns="SYMBOL", keytype="ENSEMBL")
-    df <- merge(annots, rez, by.x="ENSEMBL", by.y="ENSEMBL")
+    res_txi_deseq() -> df
+    print('printing head of df just to check')
+    print(head(df))
     df[which(is.na(df$SYMBOL)),'SYMBOL'] <- df[which(is.na(df$SYMBOL)),'ENSEMBL']
     df$SignificanceLevel <- 'NS'
     df[which(df$padj < 0.05 & abs(df$log2FoldChange) > 0.5 ),"SignificanceLevel"] <- "Significant&FoldChange"
@@ -1797,13 +1825,7 @@ output$button_fork_project <-renderUI({
     p <- list()
     tytl <- list()
     for (i in 1:length(res_txi_deseq())){
-      res_txi_deseq()[[i]] -> rez
-
-      #df <- ConvertGeneNamesToSymbols_keep_orig_names(rez, reference_df = gene2tx2name_GRCm39_u_systematic_u_onlyGeneNames)
-      rez <- data.frame(ENSEMBL=rownames(rez), rez)
-      annots <- AnnotationDbi::select(OrgDeeBee(), keys=rez$ENSEMBL, 
-                                       columns="SYMBOL", keytype="ENSEMBL")
-      df <- merge(annots, rez, by.x="ENSEMBL", by.y="ENSEMBL")
+      res_txi_deseq()[[i]] -> df
       df[which(is.na(df$SYMBOL)),'SYMBOL'] <- df[which(is.na(df$SYMBOL)),'ENSEMBL']
       df$SignificanceLevel <- 'NS'
       df[which(df$padj < 0.05 & abs(df$log2FoldChange) > 0.5 ),"SignificanceLevel"] <- "Significant&FoldChange"
@@ -1812,7 +1834,7 @@ output$button_fork_project <-renderUI({
       
       library(crosstalk)
       library(plotly)
-      tytl[[i]] <- strsplit(res_txi_deseq()[[i]]@elementMetadata[5,2], split = ": ")[[1]][2]
+      tytl[[i]] <- paste(strsplit(names(res_txi_deseq()[i]), split = "_")[[1]][2:4], collapse=' ')
       
       
       df.df <- as.data.frame(df)
@@ -1919,7 +1941,7 @@ output$button_fork_project <-renderUI({
       if(class(res_DEGs_txi_deseq())=='list'){
         # multiple groups
         for (i in 1:length(res_DEGs_txi_deseq())){
-          tytl[[i]] <- strsplit(res_txi_deseq()[[i]]@elementMetadata[5,2], split = ": ")[[1]][2]
+          tytl[[i]] <- paste(strsplit(names(res_txi_deseq()[i]), split = "_")[[1]][2:4], collapse=' ')
           if(is.null(dim(res_DEGs_txi_deseq()[[i]]))){
             toRet[[i]] <- NULL
             toWrite[[i]] <- NULL
@@ -2016,7 +2038,8 @@ output$button_fork_project <-renderUI({
       toOutput[[o]]$geneID <- gsub(pattern='/', replacement=' ', toOutput[[o]]$geneID)
     }
     
-    myTabs = lapply(1: nTabs, function(x){tabPanel(strsplit(res_txi_deseq()[[x]]@elementMetadata[5,2], split = ": ")[[1]][2], renderDT(datatable(toOutput[[x]], filter = 'top', extensions = 'Buttons', 
+    myTabs = lapply(1: nTabs, function(x){tabPanel(paste(strsplit(names(res_txi_deseq()[x]), split = "_")[[1]][2:4], collapse=' ')
+      , renderDT(datatable(toOutput[[x]], filter = 'top', extensions = 'Buttons', 
                                                                                                                                                  options = list(dom = "Blrtip",
                                                                                                                                                                 buttons = c('copy', 'csv', 'excel', 'pdf', 'print'))),
                                                                                                                                        server=FALSE, rownames = FALSE))});
@@ -2043,7 +2066,7 @@ output$button_fork_project <-renderUI({
     p <- list()
     tytl <- list()
     for (i in 1:length(res_txi_deseq())){
-      tytl[[i]] <- strsplit(res_txi_deseq()[[i]]@elementMetadata[5,2], split = ": ")[[1]][2]
+      tytl[[i]] <- paste(strsplit(names(res_txi_deseq()[i]), split = "_")[[1]][2:4], collapse=' ')
       if(is.null(GO_result()[[i]])){ p[[i]] <- ggplot()+theme_void()} else {
         p[[i]] <- dotplot(GO_result()[[i]], showCategory=50, x='p.adjust', decreasing=F)
         flnm <- paste0(ProjFolderFull(),'/GO_dotplot_300dpi_', tytl[[i]],'.png')
@@ -2396,7 +2419,7 @@ output$button_fork_project <-renderUI({
     
     #if(proceedWithLoad()==0){
     for (i in 1:length(res_txi_deseq())){
-        tytl[[i]] <- strsplit(res_txi_deseq()[[i]]@elementMetadata[5,2], split = ": ")[[1]][2]
+        tytl[[i]] <- paste(strsplit(names(res_txi_deseq()[i]), split = "_")[[1]][2:4], collapse=' ')
         deg <- res_DEGs_txi_deseq()[[i]]
         if(is.null(dim(deg))){
           g[[i]] <- ggplot()+theme_void()
