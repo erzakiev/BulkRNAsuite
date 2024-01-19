@@ -24,9 +24,9 @@ require("ggrepel") #ok
 require("OmnipathR") #ok 
 require("clusterProfiler") #ok 
 require("openxlsx") #ok
+require(crosstalk)
 #require('org.Hs.eg.db')
 #require('org.Mm.eg.db')
-#require('EnhancedVolcano')
 require(plotly)
 options(shiny.maxRequestSize=10000*1024^2)
 
@@ -598,11 +598,11 @@ server <- function(input, output, session){
   observe({
     req(input$infiles)
     if(length(input$infiles) <= 1) return({})
-    if(length(grep(pattern = "L002", x = fls()))>0){
+    if(length(grep(pattern = "_L002", x = fls()))>0){
       print("line 435 detected multiplexed reads")
       detected_multiplexedReads(1)
     }
-    if(length(grep(pattern = "R1", x = fls()))>0){
+    if(length(grep(pattern = "_R1", x = fls()))>0){
       print("line 436 detected pairedEndReads")
       detected_pairedEndReads(1)
     }
@@ -676,10 +676,10 @@ server <- function(input, output, session){
       if(detected_multiplexedReads()==1) message <- "Paired-end reads in the data after concatenation of multiplexed lines which will be treated in pairs:\n" 
       if(detected_multiplexedReads()==0) message <- "Detected paired-end reads in the data which will be treated in pairs:\n" 
       
-      R1_tracks <- grep(pattern = "R1", x = demultiplexed_fls(), value = T)
-      R1_tracks_swapped <- gsub(pattern = "R1", replacement = "R2", R1_tracks)
-      R2_tracks <- grep(pattern = "R2", x = demultiplexed_fls(), value = T)
-      R2_tracks_swapped <- gsub(pattern = "R2", replacement = "R1", R2_tracks)
+      R1_tracks <- grep(pattern = "_R1", x = demultiplexed_fls(), value = T)
+      R1_tracks_swapped <- gsub(pattern = "_R1", replacement = "_R2", R1_tracks)
+      R2_tracks <- grep(pattern = "_R2", x = demultiplexed_fls(), value = T)
+      R2_tracks_swapped <- gsub(pattern = "_R2", replacement = "_R1", R2_tracks)
       
       R1_matched_tracks <- R1_tracks[which(R1_tracks_swapped %in% R2_tracks)]
       R1_tracks[which(!R1_tracks_swapped %in% R2_tracks)] -> R1_unbalanced_tracks
@@ -690,16 +690,16 @@ server <- function(input, output, session){
       
       R1_R2_matched_tracks_list <- list()
       for (i in 1:length(R1_matched_tracks)){
-        R1_R2_matched_tracks_list[[i]] <- c(R1_matched_tracks[i], gsub(pattern = "R1", replacement = "R2", R1_matched_tracks[i]))
+        R1_R2_matched_tracks_list[[i]] <- c(R1_matched_tracks[i], gsub(pattern = "_R1", replacement = "_R2", R1_matched_tracks[i]))
       }
       if(length(R1_unbalanced_tracks)>0){
         for (i in 1:length(R1_unbalanced_tracks)){
-          R1_R2_matched_tracks_list <- append(R1_R2_matched_tracks_list, list(c(R1_unbalanced_tracks[i], paste0('[warning!]: file ',  gsub(pattern = "R1", replacement = "R2", R1_unbalanced_tracks[i]), ' was expected, but not provided, are you sure you selected all paired-end reads?'))))
+          R1_R2_matched_tracks_list <- append(R1_R2_matched_tracks_list, list(c(R1_unbalanced_tracks[i], paste0('[warning!]: file ',  gsub(pattern = "_R1", replacement = "_R2", R1_unbalanced_tracks[i]), ' was expected, but not provided, are you sure you selected all paired-end reads?'))))
         }
       }
       if(length(R2_unbalanced_tracks)>0){
         for (i in 1:length(R2_unbalanced_tracks)){
-          R1_R2_matched_tracks_list <- append(R1_R2_matched_tracks_list, list(c(paste0('[warning!]: file ',  gsub(pattern = "R2", replacement = "R1", R2_unbalanced_tracks[i]), ' was expected, but not provided, are you sure you selected all paired-end reads?'), R2_unbalanced_tracks[i])))
+          R1_R2_matched_tracks_list <- append(R1_R2_matched_tracks_list, list(c(paste0('[warning!]: file ',  gsub(pattern = "_R2", replacement = "_R1", R2_unbalanced_tracks[i]), ' was expected, but not provided, are you sure you selected all paired-end reads?'), R2_unbalanced_tracks[i])))
         }
       }
       if((length(R1_tracks)<2) | (length(R2_tracks)<2)){
@@ -786,8 +786,8 @@ server <- function(input, output, session){
     
     if(detected_pairedEndReads()==1){
       cmmnd <- paste0("; filename_dir=$(dirname $filename1); filename_small1=$(basename $filename1); filename_small2=$(basename $filename2); extension=${filename_small1##*.}; filename_small_sans_ext1=${filename_small1%.*}; filename_small_sans_ext2=${filename_small2%.*}; ", bbduk.sh, " in1=${filename1} in2=${filename2} out1=", tempStorage, "/${filename_small_sans_ext1}.trimmed.fastq.gz out2=", tempStorage, "/${filename_small_sans_ext2}.trimmed.fastq.gz ref=/home/minicluster/miniconda3/opt/bbmap-38.84-0/resources/adapters.fa ktrim=r k=23 mink=11 hdist=1 tpe tbo ziplevel=3 -Xmx1g")
-      ref<- grep(pattern = "R1", x = files2bbduk, value = T)
-      match_ref <- gsub("R1", replacement = "R2", x = ref)
+      ref<- grep(pattern = "_R1", x = files2bbduk, value = T)
+      match_ref <- gsub("_R1", replacement = "_R2", x = ref)
       
       if(length(ref)>6){
         
@@ -898,9 +898,9 @@ server <- function(input, output, session){
     
     if(detected_pairedEndReads()==1){
       print("line after 559 ok")
-      reference_initial_files <- grep(pattern = "R1", x = inputfiles, value = T)
-      reference_initial_files_names <- grep(pattern = "R1", x = inputfiles_names, value = T)
-      matched_reference_initial_files <- gsub(pattern = "R1", replacement = "R2", x = reference_initial_files)
+      reference_initial_files <- grep(pattern = "_R1", x = inputfiles, value = T)
+      reference_initial_files_names <- grep(pattern = "_R1", x = inputfiles_names, value = T)
+      matched_reference_initial_files <- gsub(pattern = "_R1", replacement = "_R2", x = reference_initial_files)
       for (i in 1:length(reference_initial_files)){
         toReturn[[i]] <- c(reference_initial_files[i], matched_reference_initial_files[i])
       }
@@ -1602,7 +1602,7 @@ output$button_fork_project <-renderUI({
         
         toRet3 <- merge(annots, toRet2, by.x="ENSEMBL", by.y="ENSEMBL")
         openxlsx::write.xlsx(as.data.frame(toRet3), file = paste0(ProjFolderFull(),'/DEGs.xlsx'))
-        saveRDS(toRet3, file = paste0(ProjFolderFull(),'/res_DEGs_txi_deseq.RDS'))
+        saveRDS(toRet3, file = paste0(ProjFolderFull(),'/.RDS'))
         return(toRet3)
       } else {
         toRet3 <- list()
@@ -1747,8 +1747,7 @@ output$button_fork_project <-renderUI({
     df[which(df$padj > 0.05 & abs(df$log2FoldChange) > 0.5 ),"SignificanceLevel"] <- "FoldChange"
     df[which(df$padj < 0.05 & abs(df$log2FoldChange) < 0.5 ),"SignificanceLevel"] <- "Significant"
     
-    library(crosstalk)
-    library(plotly)
+    
     tytl <-''
     
     
