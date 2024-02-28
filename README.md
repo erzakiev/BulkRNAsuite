@@ -13,9 +13,10 @@ An imagination of a start-to-finish suite for Bulk RNAseq analysis that
 ## Reporting
 - QC results before trimming
 - QC results after trimming
-- TPMs
+- TPM matrix
 - DEGs for each pairwise comparison in the list of all available groups
 - PCA
-- Volcano plots for each pairwise comparison in the list of all available groups
+- Interactive (plotly-based) Volcano plots for each pairwise comparison in the list of all available groups
 - Enriched terms based on the DEGs for each pairwise comparison in the list of all available groups
 - Dorothea TF regulon enrichment for each pairwise DEGs
+- GSVA analysis
