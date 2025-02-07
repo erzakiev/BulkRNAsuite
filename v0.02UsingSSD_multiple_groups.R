@@ -24,6 +24,7 @@ require("ggrepel") #ok
 require("OmnipathR") #ok 
 require("clusterProfiler") #ok 
 require("openxlsx") #ok
+require(enrichR)
 require(crosstalk)
 #require('org.Hs.eg.db')
 #require('org.Mm.eg.db')
@@ -36,11 +37,11 @@ bbduk.sh <- 'bbduk.sh '
 fastqc_powershell <- "fastqc -t 12 "
 
 credentials <- data.frame(
-  user = c("shiny", "shinymanager", "emma", 'fabrice', 'aurelia','emile','maeva','aneta','elodie','manon','debora','baptiste'), # mandatory
-  password = c("flaviallab", "flavial", "emma", 'fabrice','aurelia','emile','maeva','aneta','elodie','manon','debora','baptiste'), # mandatory
+  user = c("shiny", "shinymanager", "emma", 'fabrice', 'aurelia','emile','maeva','aneta','elodie','manon','cedric','yann','theo'), # mandatory
+  password = c("flaviallab", "flavial", "emma", 'fabrice','aurelia','emile','maeva','aneta','elodie','manon','cedric','yann','theo'), # mandatory
   #start = c("2019-04-15"), # optinal (all others)
-  expire = c(NA, NA, NA),
-  admin = c(FALSE, TRUE, FALSE),
+  expire = c(rep(NA, 13)),
+  admin = c(rep(NA, 13)),
   comment = "Simple and secure entification mechanism 
   for single ‘Shiny’ applications.",
   stringsAsFactors = FALSE
@@ -151,7 +152,7 @@ ui <- fluidPage(
                   uiOutput('ForkingPrompt'),
                   actionButton(inputId = 'validateforking', label = 'Validate choice'),
                   verbatimTextOutput('forkingfeedback')
-                  )),
+           )),
   br(),
   uiOutput("button_save_colDatt"),
   uiOutput("button_rebase_colDatt"),
@@ -222,7 +223,9 @@ ui <- fluidPage(
   #                                 tabPanel("by GSEA",DT::DTOutput("GSEA"))))
   #),
   tabsetPanel(id='Enrichments_panel', type = "tabs",
-              tabPanel("Dotplots", uiOutput('GO_dotplot_multitab'), plotOutput("GO_dotplot", height = '2000px')),
+              tabPanel("Dotplots",
+                       textInput('showCategory', label = 'Show how many top enriched terms?', value = "50", width='15%'),
+                       uiOutput('GO_dotplot_multitab'), plotOutput("GO_dotplot", height = '2000px')),
               tabPanel("Tables of terms", uiOutput('GO_multitab'),  DT::DTOutput("GO"))
   ),
   br(),
@@ -240,10 +243,21 @@ ui <- fluidPage(
   plotOutput("GSVAplot", height = '1200px'),
   DT::DTOutput("GSVAtable"),
   
+  
+  textOutput("enrichR_title"),
+  fluidRow(
+    column(8, textInput('genes_for_enrichR', label = '', value = "", placeholder = 'Enter/paste a list of genes in SYMBOL and/or ENSEMBL formats', width='100%')),
+    column(1, div( style = "margin-top: 20px;", actionButton(inputId = "runenrichR", "Calculate")))
+  ),
+  verbatimTextOutput("enrichR_genes_matching"),
+  shinycssloaders::withSpinner(DT::DTOutput("enrichRtable")),
+  
   #downloadButton("report", "Generate report")
   #screenshotButton(download = TRUE, id = "plot", filename = "poopity.scoop")
   #actionButton("toSnap", "Take a snapshot of the current state"),
   downloadButton("downloadData", "Download"),
+  downloadButton("downloadDotPlot", "Download"),
+  downloadButton("downloadDotPlots", "Download"),
   
   tags$head(tags$style("#salmon_path{
                            border: dotted grey; border-radius: 15px; 
@@ -329,6 +343,10 @@ ui <- fluidPage(
                                  /*font-style: italic;*/
                                  font-weight: bold;}
                                  #GSVA_title{color: black;
+                                 font-size: 22px;
+                                 /*font-style: italic;*/
+                                 font-weight: bold;}
+                                 #enrichR_title{color: black;
                                  font-size: 22px;
                                  /*font-style: italic;*/
                                  font-weight: bold;}
@@ -573,10 +591,10 @@ server <- function(input, output, session){
     {req(input$referenceGenomeChoice)
       #Human GRCh38"=1,"Mouse GRCm39"=2,"Mouse C57B6"=3,"Mouse MM129"=4
       #print(input$referenceGenomeChoice)
-      if(referenceGenomeChoice()==1) txdbPath <- paste0(shiny_home, '/txdb_hsapiens.RDS')
-      if(referenceGenomeChoice()==2) txdbPath <- paste0(shiny_home, '/txdb_GRCm39.RDS')
-      if(referenceGenomeChoice()==3) txdbPath <- paste0(shiny_home, '/txdb_c57bl6.RDS')
-      if(referenceGenomeChoice()==4) txdbPath <- paste0(shiny_home, '/txdb_MM129.RDS')
+      if(referenceGenomeChoice()==1) txdbPath <- paste0(house, '/txdb_hsapiens.RDS')
+      if(referenceGenomeChoice()==2) txdbPath <- paste0(house, '/txdb_GRCm39.RDS')
+      if(referenceGenomeChoice()==3) txdbPath <- paste0(house, '/txdb_c57bl6.RDS')
+      if(referenceGenomeChoice()==4) txdbPath <- paste0(house, '/txdb_MM129.RDS')
       return(txdbPath)
     })
   
@@ -785,7 +803,7 @@ server <- function(input, output, session){
     
     
     if(detected_pairedEndReads()==1){
-      cmmnd <- paste0("; filename_dir=$(dirname $filename1); filename_small1=$(basename $filename1); filename_small2=$(basename $filename2); extension=${filename_small1##*.}; filename_small_sans_ext1=${filename_small1%.*}; filename_small_sans_ext2=${filename_small2%.*}; ", bbduk.sh, " in1=${filename1} in2=${filename2} out1=", tempStorage, "/${filename_small_sans_ext1}.trimmed.fastq.gz out2=", tempStorage, "/${filename_small_sans_ext2}.trimmed.fastq.gz ref=/home/minicluster/miniconda3/opt/bbmap-38.84-0/resources/adapters.fa ktrim=r k=23 mink=11 hdist=1 tpe tbo ziplevel=3 -Xmx1g")
+      cmmnd <- paste0("; filename_dir=$(dirname $filename1); filename_small1=$(basename $filename1); filename_small2=$(basename $filename2); extension=${filename_small1##*.}; filename_small_sans_ext1=${filename_small1%.*}; filename_small_sans_ext2=${filename_small2%.*}; ", bbduk.sh, " in1=${filename1} in2=${filename2} out1=", tempStorage, "/${filename_small_sans_ext1}.trimmed.fastq.gz out2=", tempStorage, "/${filename_small_sans_ext2}.trimmed.fastq.gz ref=/home/minicluster/miniconda3/opt/bbmap-39.06-0/resources/adapters.fa ktrim=r k=23 mink=11 hdist=1 tpe tbo ziplevel=3 -Xmx1g")
       ref<- grep(pattern = "_R1", x = files2bbduk, value = T)
       match_ref <- gsub("_R1", replacement = "_R2", x = ref)
       
@@ -855,7 +873,7 @@ server <- function(input, output, session){
       print(arggg)
       system(arggg)
     } else {
-      cmmnd <- paste0("; filename_dir=$(dirname $filename); filename_small=$(basename $filename); extension=${filename_small##*.}; filename_small_sans_ext=${filename_small%.*}; ", bbduk.sh," in=${filename} out=", tempStorage, "/${filename_small_sans_ext}.trimmed.fastq.gz ref=/home/minicluster/miniconda3/opt/bbmap-38.84-0/resources/adapters.fa ktrim=r k=23 mink=11 hdist=1 tpe tbo ziplevel=3 -Xmx1g")
+      cmmnd <- paste0("; filename_dir=$(dirname $filename); filename_small=$(basename $filename); extension=${filename_small##*.}; filename_small_sans_ext=${filename_small%.*}; ", bbduk.sh," in=${filename} out=", tempStorage, "/${filename_small_sans_ext}.trimmed.fastq.gz ref=/home/minicluster/miniconda3/opt/bbmap-39.06-0/resources/adapters.fa ktrim=r k=23 mink=11 hdist=1 tpe tbo ziplevel=3 -Xmx1g")
       for (i in 1:length(files2bbduk)){
         flname <- files2bbduk[[i]]
         print("printing the exact command that is argggg")
@@ -1059,17 +1077,17 @@ server <- function(input, output, session){
   fastqc_report_after_trimming <- reactive({
     if(salmon_finished()==0) return({})
     #if(proceedWithLoad()==0){
-      print("line 895 was ok")
-      fastqc.zip_files <- list.files(path = trimmed_folder(), pattern = "fastqc.zip", full.names = T)
-      print("line 897 was ok")
-      print(fastqc.zip_files)
-      print("line 898 was ok")
-      fastqc.zip_files_read <-list()
-      for (i in 1:length(fastqc.zip_files)){
-        fastqc.zip_files_read[[i]] <- suppressMessages(qc_read(file = fastqc.zip_files[[i]]))
-      }
-      saveRDS(fastqc.zip_files_read, file = paste0(ProjFolderFull(),'/fastqc_report_after_trimming.RDS'))
-      return(fastqc.zip_files_read)
+    print("line 895 was ok")
+    fastqc.zip_files <- list.files(path = trimmed_folder(), pattern = "fastqc.zip", full.names = T)
+    print("line 897 was ok")
+    print(fastqc.zip_files)
+    print("line 898 was ok")
+    fastqc.zip_files_read <-list()
+    for (i in 1:length(fastqc.zip_files)){
+      fastqc.zip_files_read[[i]] <- suppressMessages(qc_read(file = fastqc.zip_files[[i]]))
+    }
+    saveRDS(fastqc.zip_files_read, file = paste0(ProjFolderFull(),'/fastqc_report_after_trimming.RDS'))
+    return(fastqc.zip_files_read)
     #} else {
     #  print("reading fastqc_report_after_trimming.RDS file")
     #  return(readRDS(paste0(ProjFolderFull(),'/fastqc_report_after_trimming.RDS')))
@@ -1170,6 +1188,9 @@ server <- function(input, output, session){
       shinyjs::hide(id='GSVA_title')
       shinyjs::hide(id='genes_for_gsva')
       shinyjs::hide(id='runGSVA')
+      shinyjs::hide(id='enrichR_title')
+      shinyjs::hide(id='genes_for_enrichR')
+      shinyjs::hide(id='runenrichR')
       shinyjs::hide(id='ForkingPrompt')
       shinyjs::hide(id='GroupsPromptTextFork')
       shinyjs::hide(id='validateforking')
@@ -1179,6 +1200,9 @@ server <- function(input, output, session){
       shinyjs::show(id='GSVA_title')
       shinyjs::show(id='genes_for_gsva')
       shinyjs::show(id='runGSVA')
+      shinyjs::show(id='enrichR_title')
+      shinyjs::show(id='genes_for_enrichR')
+      shinyjs::show(id='runenrichR')
       shinyjs::show(id = "fastqcstatspanel")
       shinyjs::show(id = "fastqcstatspanel_AfterTrimming")
       shinyjs::show(id='ForkingPrompt')
@@ -1197,7 +1221,7 @@ server <- function(input, output, session){
       shinyjs::hide(id = "GO_multitab")
       shinyjs::hide(id = "GO_dotplot_multitab")
       shinyjs::hide(id = "DorotheaMultitab")
-
+      
       shinyjs::show(id = "DESeq_DEGs")
       shinyjs::show(id = "Volcano")
       shinyjs::show(id = "GO")
@@ -1226,6 +1250,8 @@ server <- function(input, output, session){
     shinyjs::hide(id = "fastqcstatspanel_AfterTrimming")
     shinyjs::hide(id = "mySearch")
     shinyjs::hide(id = "downloadData")
+    shinyjs::hide(id = "downloadDotPlot")
+    shinyjs::hide(id = "downloadDotPlots")
   })
   observeEvent(input$groups_specified, {
     print("line 909 ok")
@@ -1234,18 +1260,18 @@ server <- function(input, output, session){
     shinyjs::show(id = "mySearch")
   })
   
-output$button_rebase_colDatt<-renderUI({
+  output$button_rebase_colDatt<-renderUI({
     while(salmon_finished()==0) return({})
-  actionButton(inputId = 'groups_rebase', label = "Modify the background factor and/or sample groupings?", icon("paper-plane"))
+    actionButton(inputId = 'groups_rebase', label = "Modify the background factor and/or sample groupings?", icon("paper-plane"))
   })
-
-output$button_fork_project <-renderUI({
-  while(salmon_finished()==0) return({})
-  actionButton(inputId = 'fork', label = "Fork some samples into a different folder?")
-})
-
-
-
+  
+  output$button_fork_project <-renderUI({
+    while(salmon_finished()==0) return({})
+    actionButton(inputId = 'fork', label = "Fork some samples into a different folder?")
+  })
+  
+  
+  
   observe({
     req(input$groups_specified)
     print("line 913 ok")
@@ -1301,6 +1327,7 @@ output$button_fork_project <-renderUI({
     } else {
       for (i in 1:length(initial_files)){
         flname <- initial_files[[i]]
+        flname_base <- basename(flname)
         arggggg <- paste0("filename=",flname,"; ", salmon, " quant -i ", indexPath()," -l A -r ", flname," -p 16 --validateMappings -o ", trimmed_folder(),'/', flname_base, "_quant")
         print('printin the arggggg passed to salmon')
         print(arggggg)
@@ -1328,7 +1355,7 @@ output$button_fork_project <-renderUI({
       print(TPM_filelist)
       txdb <- readRDS(txdbPath())
       txi_ <- tximport::tximport(TPM_filelist, type = "salmon", tx2gene = txdb, ignoreTxVersion = T)
-      saveRDS(txi_, file = paste0(ProjFolderFull(),'/txi.RDS'))
+      5
       return(txi_)
     } else {
       salmon_finished(1)
@@ -1356,7 +1383,7 @@ output$button_fork_project <-renderUI({
     res_counts<-txi()$counts
     res_counts <- data.frame(ENSEMBL=rownames(res_counts), res_counts)
     annots2 <- AnnotationDbi::select(OrgDeeBee(), keys=rownames(res_counts), 
-                                    columns="SYMBOL", keytype="ENSEMBL")
+                                     columns="SYMBOL", keytype="ENSEMBL")
     result_counts <- merge(annots2, res_counts, by.x="ENSEMBL", by.y="ENSEMBL")
     result_counts <- rbind(c('-','-',colDatt$data$Group),result_counts)
     openxlsx::write.xlsx(result_counts, file = paste0(ProjFolderFull(), '/Counts.xlsx'))
@@ -1366,33 +1393,33 @@ output$button_fork_project <-renderUI({
   
   output$salmon_log <- renderRHandsontable({
     #if(proceedWithLoad()==0){
-      if(salmon_finished()==0) return({})
-      print("line 999 ok")
-      toPrint <- NULL
-      reactiveFileLog <- list()
-      filelist <- names(final_fls())
-      
-      flpth <- paste0(filelist,"_quant/logs/salmon_quant.log")
-      print('Printing flpth:')
-      print(flpth)
-      texts <- NULL
-      rates <- NULL
-      for (i in 1:length(flpth)){
-        reactiveFileLog[[i]] <- reactiveFileReader(1000, session, filePath = flpth[i], read.table, sep = "\t")
-        texts <- c(texts, grep(pattern = "Mapping rate", x = as.vector(reactiveFileLog[[i]]())[[1]], value = T))
-        rates <- c(rates, sapply(strsplit(x = texts[i], split = "=", fixed = T), function(x) x[2]))
-      }
-      saveRDS(filelist, file = paste0(ProjFolderFull(),"/filelist.RDS"))
-      saveRDS(rates, file = paste0(ProjFolderFull(),"/rates.RDS"))
-      print("line 1061 was ok")
-      #return(data.frame(AlignmentLog=grep(pattern = "Index contained|Mapping rate|warning", toPrint, value = T )))
-      openxlsx::write.xlsx(x = data.frame(File=filelist, Rate=rates), file = 'alignment_rates.xlsx')
-      rhandsontable(data.frame(File=filelist, Rate=rates), width = 2000) %>%
-        hot_context_menu(
-          customOpts = list(
-            csv = list(name = "Download to CSV",
-                       callback = htmlwidgets::JS(
-                         "function (key, options) {
+    if(salmon_finished()==0) return({})
+    print("line 999 ok")
+    toPrint <- NULL
+    reactiveFileLog <- list()
+    filelist <- names(final_fls())
+    
+    flpth <- paste0(filelist,"_quant/logs/salmon_quant.log")
+    print('Printing flpth:')
+    print(flpth)
+    texts <- NULL
+    rates <- NULL
+    for (i in 1:length(flpth)){
+      reactiveFileLog[[i]] <- reactiveFileReader(1000, session, filePath = flpth[i], read.table, sep = "\t")
+      texts <- c(texts, grep(pattern = "Mapping rate", x = as.vector(reactiveFileLog[[i]]())[[1]], value = T))
+      rates <- c(rates, sapply(strsplit(x = texts[i], split = "=", fixed = T), function(x) x[2]))
+    }
+    saveRDS(filelist, file = paste0(ProjFolderFull(),"/filelist.RDS"))
+    saveRDS(rates, file = paste0(ProjFolderFull(),"/rates.RDS"))
+    print("line 1061 was ok")
+    #return(data.frame(AlignmentLog=grep(pattern = "Index contained|Mapping rate|warning", toPrint, value = T )))
+    openxlsx::write.xlsx(x = data.frame(File=filelist, Rate=rates), file = 'alignment_rates.xlsx')
+    rhandsontable(data.frame(File=filelist, Rate=rates), width = 2000) %>%
+      hot_context_menu(
+        customOpts = list(
+          csv = list(name = "Download to CSV",
+                     callback = htmlwidgets::JS(
+                       "function (key, options) {
                          var csv = csvString(this, sep=',', dec='.');
 
                          var link = document.createElement('a');
@@ -1404,7 +1431,7 @@ output$button_fork_project <-renderUI({
                          link.click();
                          document.body.removeChild(link);
                        }"))))
-      
+    
     #} else {
     #  filelist <- readRDS(file = paste0(ProjFolderFull(),"/filelist.RDS"))
     #  rates <- readRDS(file = paste0(ProjFolderFull(),"/rates.RDS"))
@@ -1418,16 +1445,16 @@ output$button_fork_project <-renderUI({
     #                   callback = htmlwidgets::JS(
     #                     "function (key, options) {
     #                     var csv = csvString(this, sep=',', dec='.');
-  #
-  #                       var link = document.createElement('a');
-  #                       link.setAttribute('href', 'data:text/plain;charset=utf-8,' +
-  #                         encodeURIComponent(csv));
-  #                       link.setAttribute('download', 'data.csv');
-#
-   #                      document.body.appendChild(link);
-  #                       link.click();
-  #                       document.body.removeChild(link);
-   #                    }"))))
+    #
+    #                       var link = document.createElement('a');
+    #                       link.setAttribute('href', 'data:text/plain;charset=utf-8,' +
+    #                         encodeURIComponent(csv));
+    #                       link.setAttribute('download', 'data.csv');
+    #
+    #                      document.body.appendChild(link);
+    #                       link.click();
+    #                       document.body.removeChild(link);
+    #                    }"))))
     #}
   }
   )
@@ -1508,7 +1535,7 @@ output$button_fork_project <-renderUI({
     if(salmon_finished()==0) return({})
     selectInput(inputId = "samples2fork", label = "Samples to fork into another directory", choices = colDatt$data$Sample, multiple = T)
   }
-)
+  )
   
   groups_specified <- reactiveVal(0)
   observeEvent(input$groups_specified,{
@@ -1538,12 +1565,12 @@ output$button_fork_project <-renderUI({
   
   txi_deseq <- reactive({
     #if(proceedWithLoad()==0){
-      if(salmon_finished()==0) return({})
+    if(salmon_finished()==0) return({})
     print('diagnostic colDatt$data from txi_deseq')
     print(colDatt$data)
-      toRet <- DESeq2::DESeqDataSetFromTximport(txi(), colData = colDatt$data, design = ~Group)
-      saveRDS(toRet, file = paste0(ProjFolderFull(),'/txi_deseq.RDS'))
-      return(toRet)
+    toRet <- DESeq2::DESeqDataSetFromTximport(txi(), colData = colDatt$data, design = ~Group)
+    saveRDS(toRet, file = paste0(ProjFolderFull(),'/txi_deseq.RDS'))
+    return(toRet)
     #} else {
     #  print("reading txi_deseq.RDS file")
     #  return(readRDS(paste0(ProjFolderFull(),'/txi_deseq.RDS')))
@@ -1553,19 +1580,19 @@ output$button_fork_project <-renderUI({
   
   txi_deseq_deseq <- reactive({
     #if(proceedWithLoad()==0){
-      if(salmon_finished()==0) return({})
-      txi_deseq() -> matr
-      colDatt$data -> colDat
-      reff <- colDat[which(colDat[,3]),2][1]
-      #reff <- matr$Group[which(colDat[,3])]
-      #print(reff)
-      if(length(which(colDat[,3]))>0) matr$Group <- relevel(x = matr$Group, ref = reff)
-      smallestGroupSize <- floor(nrow(colDat))
-      keep <- rowSums(counts(matr) >= 10) >= smallestGroupSize
-      matr <- matr[keep,]
-      toRet <- DESeq2::DESeq(matr)
-      saveRDS(toRet, file = paste0(ProjFolderFull(),'/txi_deseq_deseq.RDS'))
-      return(toRet)
+    if(salmon_finished()==0) return({})
+    txi_deseq() -> matr
+    colDatt$data -> colDat
+    reff <- colDat[which(colDat[,3]),2][1]
+    #reff <- matr$Group[which(colDat[,3])]
+    #print(reff)
+    if(length(which(colDat[,3]))>0) matr$Group <- relevel(x = matr$Group, ref = reff)
+    smallestGroupSize <- floor(nrow(colDat))
+    keep <- rowSums(counts(matr) >= 10) >= smallestGroupSize
+    matr <- matr[keep,]
+    toRet <- DESeq2::DESeq(matr)
+    saveRDS(toRet, file = paste0(ProjFolderFull(),'/txi_deseq_deseq.RDS'))
+    return(toRet)
     #}
     #else {
     #  print("reading txi_deseq_deseq.RDS file")
@@ -1574,42 +1601,42 @@ output$button_fork_project <-renderUI({
   })
   res_txi_deseq <- reactive({
     #if(proceedWithLoad()==0){
-      if(salmon_finished()==0) return({})
-      if(length(resultsNames(txi_deseq_deseq()))<=2){
-        toRet <- results(txi_deseq_deseq())
-        toRet$log10padj <- log10(toRet$padj)
-        toRet$Significance <- 'Non-significant'
-        toRet$Significance[toRet$padj<0.05] <- 'Significant (padj < 0.05)'
+    if(salmon_finished()==0) return({})
+    if(length(resultsNames(txi_deseq_deseq()))<=2){
+      toRet <- results(txi_deseq_deseq())
+      toRet$log10padj <- log10(toRet$padj)
+      toRet$Significance <- 'Non-significant'
+      toRet$Significance[toRet$padj<0.05] <- 'Significant (padj < 0.05)'
+      
+      toRet2 <- data.frame(ENSEMBL=rownames(toRet), toRet[,1:2], abs_log2FoldChange=abs(toRet[,2]),toRet[,3:ncol(toRet)])
+      annots <- AnnotationDbi::select(OrgDeeBee(), keys=rownames(toRet2), 
+                                      columns="SYMBOL", keytype="ENSEMBL")
+      
+      toRet3 <- merge(annots, toRet2, by.x="ENSEMBL", by.y="ENSEMBL")
+      toRet3 <- toRet3[order(toRet3$padj),]
+      
+    }  else {
+      toRet3 <- toRet <- list()
+      for (i in 2:length(resultsNames(txi_deseq_deseq()))){
+        toRet[[(i-1)]] <- results(txi_deseq_deseq(), name = resultsNames(txi_deseq_deseq())[i] )
+        toRet[[(i-1)]]$log10padj <- log10( toRet[[(i-1)]]$padj)
+        toRet[[(i-1)]]$Significance <- 'Non-significant'
+        toRet[[(i-1)]]$Significance[ toRet[[(i-1)]]$padj<0.05] <- 'Significant (padj < 0.05)'
         
-        toRet2 <- data.frame(ENSEMBL=rownames(toRet), toRet[,1:2], abs_log2FoldChange=abs(toRet[,2]),toRet[,3:ncol(toRet)])
+        toRet2 <- data.frame(ENSEMBL=rownames(toRet[[(i-1)]]), toRet[[(i-1)]][,1:2], abs_log2FoldChange=abs(toRet[[(i-1)]][,2]),toRet[[(i-1)]][,3:ncol(toRet[[(i-1)]])])
         annots <- AnnotationDbi::select(OrgDeeBee(), keys=rownames(toRet2), 
                                         columns="SYMBOL", keytype="ENSEMBL")
         
-        toRet3 <- merge(annots, toRet2, by.x="ENSEMBL", by.y="ENSEMBL")
-        toRet3 <- toRet3[order(toRet3$padj),]
+        toRet3[[(i-1)]] <- merge(annots, toRet2, by.x="ENSEMBL", by.y="ENSEMBL")
+        toRet3[[(i-1)]] <- toRet3[[(i-1)]][order(toRet3[[(i-1)]]$padj),]
         
-      }  else {
-        toRet3 <- toRet <- list()
-        for (i in 2:length(resultsNames(txi_deseq_deseq()))){
-          toRet[[(i-1)]] <- results(txi_deseq_deseq(), name = resultsNames(txi_deseq_deseq())[i] )
-          toRet[[(i-1)]]$log10padj <- log10( toRet[[(i-1)]]$padj)
-          toRet[[(i-1)]]$Significance <- 'Non-significant'
-          toRet[[(i-1)]]$Significance[ toRet[[(i-1)]]$padj<0.05] <- 'Significant (padj < 0.05)'
-          
-          toRet2 <- data.frame(ENSEMBL=rownames(toRet[[(i-1)]]), toRet[[(i-1)]][,1:2], abs_log2FoldChange=abs(toRet[[(i-1)]][,2]),toRet[[(i-1)]][,3:ncol(toRet[[(i-1)]])])
-          annots <- AnnotationDbi::select(OrgDeeBee(), keys=rownames(toRet2), 
-                                          columns="SYMBOL", keytype="ENSEMBL")
-          
-          toRet3[[(i-1)]] <- merge(annots, toRet2, by.x="ENSEMBL", by.y="ENSEMBL")
-          toRet3[[(i-1)]] <- toRet3[[(i-1)]][order(toRet3[[(i-1)]]$padj),]
-          
-        }
-        names(toRet3) <- resultsNames(txi_deseq_deseq())[2:length(resultsNames(txi_deseq_deseq()))]
       }
-      
-      saveRDS(toRet3, file = paste0(ProjFolderFull(),'/res_txi_deseq.RDS'))
-      openxlsx::write.xlsx(toRet3, file = paste0(ProjFolderFull(),'/DEGs_full.xlsx'))
-      return(toRet3)
+      names(toRet3) <- resultsNames(txi_deseq_deseq())[2:length(resultsNames(txi_deseq_deseq()))]
+    }
+    
+    saveRDS(toRet3, file = paste0(ProjFolderFull(),'/res_txi_deseq.RDS'))
+    openxlsx::write.xlsx(toRet3, file = paste0(ProjFolderFull(),'/DEGs_full.xlsx'))
+    return(toRet3)
     #}  else {
     #  print("reading txi_deseq.RDS file")
     #  return(readRDS(paste0(ProjFolderFull(),'/res_txi_deseq.RDS')))
@@ -1617,31 +1644,30 @@ output$button_fork_project <-renderUI({
   })
   res_DEGs_txi_deseq <- reactive({
     #if(proceedWithLoad()==0){
-      if(salmon_finished()==0) return({})
-      toRet <- res_txi_deseq()
-      print('printing class of res_txi_deseq()')
-      print(class(toRet))
-      if(class(toRet)=="data.frame"){
-        toRet <- toRet[which(toRet$padj<0.05),]
-        if(nrow(toRet)==0) return({as.data.frame("oops, none significant")})
-        toRet <- toRet[order(toRet$padj),]
-        openxlsx::write.xlsx(as.data.frame(toRet), file = paste0(ProjFolderFull(),'/DEGs.xlsx'))
-        saveRDS(toRet, file = paste0(ProjFolderFull(),'/.RDS'))
-        return(toRet)
-      } else {
-        for (i in 1:length(toRet)){
-          toRet[[i]] <- toRet[[i]][which(toRet[[i]]$padj<0.05),]
-          if(nrow(toRet[[i]])==0){
-            toRet[[i]] <- "oops, none significant" 
-          }
-          else {
-            toRet[[i]] <- toRet[[i]][order(toRet[[i]]$padj),]
-           } 
+    if(salmon_finished()==0) return({})
+    toRet <- res_txi_deseq()
+    print('printing class of res_txi_deseq()')
+    print(class(toRet))
+    if(class(toRet)=="data.frame"){
+      toRet <- toRet[which(toRet$padj<0.05),]
+      if(nrow(toRet)==0) return({as.data.frame("oops, none significant")})
+      toRet <- toRet[order(toRet$padj),]
+      openxlsx::write.xlsx(as.data.frame(toRet), file = paste0(ProjFolderFull(),'/DEGs.xlsx'))
+    } else {
+      for (i in 1:length(toRet)){
+        toRet[[i]] <- toRet[[i]][which(toRet[[i]]$padj<0.05),]
+        if(nrow(toRet[[i]])==0){
+          toRet[[i]] <- "oops, none significant" 
         }
-        openxlsx::write.xlsx(toRet, file = paste0(ProjFolderFull(),'/DEGs.xlsx'))
-        saveRDS(toRet, file = paste0(ProjFolderFull(),'/res_DEGs_txi_deseq.RDS'))
-        return(toRet)
+        else {
+          toRet[[i]] <- toRet[[i]][order(toRet[[i]]$padj),]
+        } 
       }
+      openxlsx::write.xlsx(toRet, file = paste0(ProjFolderFull(),'/DEGs.xlsx'))
+    }
+    
+    saveRDS(toRet, file = paste0(ProjFolderFull(),'/res_DEGs_txi_deseq.RDS'))
+    return(toRet)
     #}
     #else {
     #  print("reading res_DEGs_txi_deseq.RDS file")
@@ -1672,17 +1698,17 @@ output$button_fork_project <-renderUI({
     if(multiplegroups()==1) return({})
     
     datatable(as.data.frame(res_txi_deseq()), filter = 'top', extensions = 'Buttons', 
-                     options = list(
-                       dom = "Bl<'search'>rtip",
-                       buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
-                       searchCols = list(NULL, NULL, NULL, NULL,
-                                         NULL, NULL, NULL, NULL, NULL, NULL, NULL, list(search = 'Significant (padj < 0.05)'))
-                       ),
+              options = list(
+                dom = "Bl<'search'>rtip",
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                searchCols = list(NULL, NULL, NULL, NULL,
+                                  NULL, NULL, NULL, NULL, NULL, NULL, NULL, list(search = 'Significant (padj < 0.05)'))
+              ),
               callback = JS(callback))
-              },
-              server=FALSE, rownames = FALSE
-    
-)
+  },
+  server=FALSE, rownames = FALSE
+  
+  )
   
   output$DESeq_DEGsMultitab <- renderUI({
     #req(input$groups_specified)
@@ -1693,13 +1719,13 @@ output$button_fork_project <-renderUI({
     myTabs = lapply(1: nTabs, function(x){
       tabPanel(paste(strsplit(names(res_txi_deseq()[x]), split = "_")[[1]][2:4], collapse=' '), 
                renderDT({datatable(res_txi_deseq()[[x]], filter = 'top', extensions = 'Buttons', 
-                                  options = list(dom = "Blrtip",
-                                                 buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
-                                                 searchCols = list(NULL, NULL, NULL, NULL,
-                                                                   NULL, NULL, NULL, NULL, NULL, NULL, NULL, list(search = 'Significant (padj < 0.05)'))
-                                                 ), callback = JS(callback),
-                        )},
-                        server=FALSE, rownames = FALSE))});
+                                   options = list(dom = "Blrtip",
+                                                  buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                                                  searchCols = list(NULL, NULL, NULL, NULL,
+                                                                    NULL, NULL, NULL, NULL, NULL, NULL, NULL, list(search = 'Significant (padj < 0.05)'))
+                                   ), callback = JS(callback),
+               )},
+               server=FALSE, rownames = FALSE))});
     return(do.call(tabsetPanel, myTabs))
   })
   
@@ -1883,20 +1909,20 @@ output$button_fork_project <-renderUI({
   
   m_t2g_most_symbol <- reactive({
     if(referenceGenomeChoice()!=1) 
-      return(readRDS(paste0(shiny_home, '/m_t2g_most_symbol.RDS'))) else {
-        return(readRDS(paste0(shiny_home, 'm_t2g_most_symbol_human.RDS')))
+      return(readRDS(paste0(house, '/m_t2g_most_symbol.RDS'))) else {
+        return(readRDS(paste0(house, '/m_t2g_most_symbol_human.RDS')))
       }
   }
   )
   
   net <- reactive({
     if(referenceGenomeChoice()!=1){
-      return(readRDS(paste0(shiny_home, '/dorothea_net_mouse.RDS')))} else {
-        return(readRDS(paste0(shiny_home, '/dorothea_net_human.RDS')))
+      return(readRDS(paste0(house, '/dorothea_net_mouse.RDS')))} else {
+        return(readRDS(paste0(house, '/dorothea_net_human.RDS')))
       }
   })
-    
-    
+  
+  
   
   OrgDeeBee <- reactive({
     print('printing input$referenceGenomeChoice')
@@ -1935,53 +1961,53 @@ output$button_fork_project <-renderUI({
     #req(input$groups_specified)
     if(salmon_finished()==0) return({})
     #if(proceedWithLoad()==0){
-      toRet <- list()
-      toWrite <- list()
-      tytl <- list()
-      if(class(res_DEGs_txi_deseq())=='list'){
-        # multiple groups
-        for (i in 1:length(res_DEGs_txi_deseq())){
-          tytl[[i]] <- paste(strsplit(names(res_txi_deseq()[i]), split = "_")[[1]][2:4], collapse=' ')
-          if(is.null(dim(res_DEGs_txi_deseq()[[i]]))){
-            toRet[[i]] <- NULL
-            toWrite[[i]] <- NULL
-          } else {
-            toRet[[i]] <- enrichGO(gene = res_DEGs_txi_deseq()[[i]][,2], 
-                                   keyType = "SYMBOL", 
-                                   OrgDb = OrgDeeBee(), 
-                                   ont = "BP", 
-                                   pAdjustMethod = "BH", 
-                                   qvalueCutoff = 0.05, 
-                                   readable = TRUE)
-            
-            toWrite[[i]] <- as.data.frame(toRet[[i]])
-            toWrite[[i]]$geneID <- gsub(pattern='/', replacement=' ', toWrite[[i]]$geneID)
-            
-          }
+    toRet <- list()
+    toWrite <- list()
+    tytl <- list()
+    if(class(res_DEGs_txi_deseq())=='list'){
+      # multiple groups
+      for (i in 1:length(res_DEGs_txi_deseq())){
+        tytl[[i]] <- paste(strsplit(names(res_txi_deseq()[i]), split = "_")[[1]][2:4], collapse=' ')
+        if(is.null(dim(res_DEGs_txi_deseq()[[i]]))){
+          toRet[[i]] <- NULL
+          toWrite[[i]] <- NULL
+        } else {
+          toRet[[i]] <- enrichGO(gene = res_DEGs_txi_deseq()[[i]][,2], 
+                                 keyType = "SYMBOL", 
+                                 OrgDb = OrgDeeBee(), 
+                                 ont = "BP", 
+                                 pAdjustMethod = "BH", 
+                                 qvalueCutoff = 0.05, 
+                                 readable = TRUE)
+          
+          toWrite[[i]] <- as.data.frame(toRet[[i]])
+          toWrite[[i]]$geneID <- gsub(pattern='/', replacement=' ', toWrite[[i]]$geneID)
           
         }
-        names(toRet) <- unlist(tytl)
-        saveRDS(toRet, file = paste0(ProjFolderFull(),'/GO_result.RDS'))
-        names(toRet) <- gsub(pattern = 'Group ', replacement = '', x = names(toRet))
-        names(toRet) <- substr(names(toRet), start = 1, stop = 30)
-        openxlsx::write.xlsx(toWrite, file = paste0(ProjFolderFull(),'/GOs.xlsx'))
-        return(toRet)
         
-      } else {
-        # 1 vs 1 
-        toRet <- enrichGO(gene = res_DEGs_txi_deseq()[,2], 
-                          keyType = "SYMBOL", 
-                          OrgDb = OrgDeeBee(), 
-                          ont = "BP", 
-                          pAdjustMethod = "BH", 
-                          qvalueCutoff = 0.05, 
-                          readable = TRUE)
-        saveRDS(toRet, file = paste0(ProjFolderFull(),'/GO_result.RDS'))
-        toWrite <- as.data.frame(toRet)
-        toWrite$geneID <- gsub(pattern='/', replacement=' ', toWrite$geneID)
-        openxlsx::write.xlsx(toWrite, file = paste0(ProjFolderFull(),'/GOs.xlsx'))
-        return(toRet)
       }
+      names(toRet) <- unlist(tytl)
+      saveRDS(toRet, file = paste0(ProjFolderFull(),'/GO_result.RDS'))
+      names(toRet) <- gsub(pattern = 'Group ', replacement = '', x = names(toRet))
+      names(toRet) <- substr(names(toRet), start = 1, stop = 30)
+      openxlsx::write.xlsx(toWrite, file = paste0(ProjFolderFull(),'/GOs.xlsx'))
+      return(toRet)
+      
+    } else {
+      # 1 vs 1 
+      toRet <- enrichGO(gene = res_DEGs_txi_deseq()[,2], 
+                        keyType = "SYMBOL", 
+                        OrgDb = OrgDeeBee(), 
+                        ont = "BP", 
+                        pAdjustMethod = "BH", 
+                        qvalueCutoff = 0.05, 
+                        readable = TRUE)
+      saveRDS(toRet, file = paste0(ProjFolderFull(),'/GO_result.RDS'))
+      toWrite <- as.data.frame(toRet)
+      toWrite$geneID <- gsub(pattern='/', replacement=' ', toWrite$geneID)
+      openxlsx::write.xlsx(toWrite, file = paste0(ProjFolderFull(),'/GOs.xlsx'))
+      return(toRet)
+    }
     #}  else {
     #  print("reading GO_result.RDS file")
     #  return(readRDS(paste0(ProjFolderFull(),'/GO_result.RDS')))
@@ -1989,6 +2015,108 @@ output$button_fork_project <-renderUI({
     
     
   })
+  
+  
+  output$enrichR_title<- renderText({
+    if(salmon_finished()==0) return({})
+    return("Calculate deeper enrichment against the enrichR database")
+  })
+  
+  enrichR_string <- reactive({
+    req(input$runenrichR)
+    if(length(input$genes_for_enrichR)==0) return(NULL)
+    toRet <- strsplits(input$genes_for_enrichR, c(" ", ",", "/"))
+    return(toRet)
+  })
+  
+  enrichR_string_matched <- reactiveVal('')
+  
+  enrichR_result <- reactive({
+    req(input$runenrichR)
+    if(is.null(enrichR_string())) return({})
+    
+    abund <- txi_tpms()
+    groups <- abund[1,3:ncol(abund)]
+    abund <- abund[-1,]
+    
+    abund <- abund[which(!duplicated(abund$ENSEMBL)),]
+    rownames(abund) <- abund$ENSEMBL
+    #matching_genes <- unique(enrichR_string()[which(enrichR_string() %in% unlist(abund[,1:2]))])
+    #non_matching_genes <- unique(enrichR_string()[which(!enrichR_string() %in% unlist(abund[,1:2]))])
+    
+    matching_genes <- unique(enrichR_string()[which(toupper(enrichR_string()) %in% toupper(unlist(abund[,1:2])))])
+    non_matching_genes <- unique(enrichR_string()[which(!toupper(enrichR_string()) %in% toupper(unlist(abund[,1:2])))])
+    
+    if(length(matching_genes) < 2){
+      return({})
+    } else {
+      enrichR_string_matched(matching_genes)
+      
+      #which(unlist(abund[,1:2]) %in% enrichR_string()) -> v1
+      #which(toupper(unlist(abund[,1:2])) %in% toupper(enrichR_string())) -> v1
+      #ifelse(test=v1>nrow(abund), yes=v1-nrow(abund), no=v1) -> v2
+      
+      # signature <- rownames(abund)[unique(v2)]
+      #abund <- abund[,-2]
+      #abund <- abund[,-1]
+      #print(signature)
+      #print(head(abund))
+      signature <- matching_genes
+      
+      dbs <- listEnrichrDbs()
+      dbs_selected <- dbs$libraryName[dbs$categoryId %in% c(2,3,4,5)]
+      #saveRDS(signature, file = paste0(ProjFolderFull(),'/signature.RDS'))
+      enriched <- enrichr(signature, dbs_selected)
+      
+      enriched_clean <- Filter(function(x) !(nrow(x)==0), enriched);
+      enriched_clean_named <- Map(cbind, group = names(enriched_clean), enriched_clean)
+      enrichR_res <- dplyr::bind_rows(enriched_clean_named)
+      saveRDS(enrichR_res, file = paste0(ProjFolderFull(),'/enrichR_res.RDS'))
+      
+      enrichR_res <- enrichR_res %>% dplyr::filter(Adjusted.P.value < 0.05)
+      enrichR_res[,1] <- as.factor(enrichR_res[,1])
+      
+      openxlsx::write.xlsx(x = enrichR_res, file = paste0(ProjFolderFull(),'/enrichR_table.xlsx'))
+      saveRDS(enrichR_res, file = paste0(ProjFolderFull(),'/enrichR_result.RDS'))
+      return(enrichR_res)
+    }
+  })
+  
+  
+  output$enrichRtable<- DT::renderDT({
+    req(input$runenrichR)
+    if(is.null(enrichR_result())) return(NULL)
+    as.data.frame(enrichR_result())
+  }, extensions = 'Buttons', 
+  options = list(
+    dom = 'Bflrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print')),
+  server=FALSE, rownames=T, filter='top')
+  
+  output$enrichR_genes_matching<- renderText({
+    if(salmon_finished()==0) return({})
+    req(input$runenrichR)
+    if(is.null(enrichR_string())) return("List of genes shouldn't be empty")
+    
+    
+    if(length(enrichR_string_matched())<2){
+      return(paste0('Only 1 gene was correctly mapped: ', enrichR_string_matched())) 
+    } else {
+      nnmpdgns <- setdiff(enrichR_string(),enrichR_string_matched())
+      if(length(nnmpdgns)==0){
+        return(paste0('All genes were mapped correctly! The genes were: ', paste(enrichR_string_matched(), collapse = ",")))
+      } else {
+        return(paste0('Correctly mapped genes: ', paste(enrichR_string_matched(), collapse = ","), '\n',
+                      'Non-mapped genes: ', paste(nnmpdgns, collapse = ","), '\n',
+                      "(If the list of unmapped genes is too long, try to replace them with their ENSEMBL notation)"
+        ))
+      }
+      
+    }
+  })
+  
+  
+  
   
   output$GSEA<- renderDT({
     if(salmon_finished()==0) return({})
@@ -2013,7 +2141,7 @@ output$button_fork_project <-renderUI({
   
   output$GSEA_dotplot<- renderPlot({
     if(salmon_finished()==0) return({})
-    p <- dotplot(GSEA_result(), showCategory=50)
+    p <- dotplot(GSEA_result(), showCategory=input$showCategory)
     png(paste0(ProjFolderFull(),'/GSEA_dotplot_300dpi.png'), 
         width = 10, 
         height = 20,
@@ -2039,16 +2167,18 @@ output$button_fork_project <-renderUI({
     }
     
     myTabs = lapply(1: nTabs, function(x){tabPanel(paste(strsplit(names(res_txi_deseq()[x]), split = "_")[[1]][2:4], collapse=' ')
-      , renderDT(datatable(toOutput[[x]], filter = 'top', extensions = 'Buttons', 
-                                                                                                                                                 options = list(dom = "Blrtip",
-                                                                                                                                                                buttons = c('copy', 'csv', 'excel', 'pdf', 'print'))),
-                                                                                                                                       server=FALSE, rownames = FALSE))});
+                                                   , renderDT(datatable(toOutput[[x]], filter = 'top', extensions = 'Buttons', 
+                                                                        options = list(dom = "Blrtip",
+                                                                                       buttons = c('copy', 'csv', 'excel', 'pdf', 'print'))),
+                                                              server=FALSE, rownames = FALSE))});
     return(do.call(tabsetPanel, myTabs))
   })
   
   output$GO_dotplot<- renderPlot({
     if(salmon_finished()==0) return({})
     if(multiplegroups()==1) return({})
+    ncat <- as.numeric(input$showCategory)
+    
     p <- dotplot(GO_result(), showCategory=50, x='p.adjust', decreasing=F)
     png(paste0(ProjFolderFull(),'/GO_dotplot_300dpi.png'), 
         width = 10, 
@@ -2056,6 +2186,18 @@ output$button_fork_project <-renderUI({
         res = 300, units = 'in')
     print(p)
     dev.off()
+    
+    if(ncat!=50){
+      p_custom <- dotplot(GO_result(), showCategory=ncat, x='p.adjust', decreasing=F)
+      png(paste0(ProjFolderFull(),'/GO_dotplot_custom_number_of_Terms_300dpi.png'), 
+          width = 10, 
+          height = round(20*ncat/50, 1),
+          res = 300, units = 'in')
+      print(p_custom)
+      dev.off()
+      click("downloadDotPlot")
+      return(p_custom)
+    }
     return(p)
   })
   
@@ -2065,22 +2207,45 @@ output$button_fork_project <-renderUI({
     if(multiplegroups()==0) return({})
     p <- list()
     tytl <- list()
+    ncat <- as.numeric(input$showCategory)
     for (i in 1:length(res_txi_deseq())){
       tytl[[i]] <- paste(strsplit(names(res_txi_deseq()[i]), split = "_")[[1]][2:4], collapse=' ')
       if(is.null(GO_result()[[i]])){ p[[i]] <- ggplot()+theme_void()} else {
-        p[[i]] <- dotplot(GO_result()[[i]], showCategory=50, x='p.adjust', decreasing=F)
-        flnm <- paste0(ProjFolderFull(),'/GO_dotplot_300dpi_', tytl[[i]],'.png')
-        cat('printing flnm')
-        cat(flnm)
-        png(filename = flnm, 
-            width = 10, 
-            height = 20,
-            res = 300, units = 'in')
-        print(p[[i]])
-        dev.off()
+        if(ncat!=50){
+          p[[i]] <- dotplot(GO_result()[[i]], showCategory=ncat, x='p.adjust', decreasing=F)
+          flnm <- paste0(ProjFolderFull(),'/GO_dotplot_custom_number_of_Terms_300dpi_', tytl[[i]],'.png')
+          cat('printing flnm')
+          cat(flnm)
+          png(filename = flnm, 
+              width = 10, 
+              height = round(20*ncat/50, 1),
+              res = 300, units = 'in')
+          print(p[[i]])
+          dev.off()
+        } else {
+          p[[i]] <- dotplot(GO_result()[[i]], showCategory=50, x='p.adjust', decreasing=F)
+          flnm <- paste0(ProjFolderFull(),'/GO_dotplot_300dpi_', tytl[[i]],'.png')
+          cat('printing flnm')
+          cat(flnm)
+          png(filename = flnm, 
+              width = 10, 
+              height = 20,
+              res = 300, units = 'in')
+          print(p[[i]])
+          dev.off()
+        }
+        
       }
     }
     
+    if(ncat!=50){
+      files2zip <- list.files(path = ProjFolderFull(), pattern = 'GO_dotplot_custom_number_of_Terms', full.names = F, recursive = F)
+      print('line 2117 printing files2zip')
+      print(files2zip)
+      zip::zip(root = ProjFolderFull(), zipfile = 'Plots_custom.zip', 
+               files=files2zip, recurse = F, include_directories = F)
+      click('downloadDotPlots')
+    }
     
     nTabs = length(res_txi_deseq())
     myTabs = lapply(1: nTabs, function(x){tabPanel(tytl[[x]], 
@@ -2090,19 +2255,6 @@ output$button_fork_project <-renderUI({
   })
   
   
-  
-  output$GSVA_plot<- renderPlot({
-    if(salmon_finished()==0) return({})
-    if(multiplegroups()==1) return({})
-    p <- dotplot(GO_result(), showCategory=50, x='p.adjust', decreasing=F)
-    png(paste0(ProjFolderFull(),'/GO_dotplot_300dpi.png'), 
-        width = 10, 
-        height = 20,
-        res = 300, units = 'in')
-    print(p)
-    dev.off()
-    return(p)
-  })
   
   output$GSVA_title<- renderText({
     if(salmon_finished()==0) return({})
@@ -2178,15 +2330,15 @@ output$button_fork_project <-renderUI({
       theme_classic() +
       theme(legend.position = "none") + theme(axis.text = element_text(size = fntsize))+scale_x_discrete(guide = guide_axis(n.dodge = 2))
     
-      #flnm <- paste0("GSVAsignature.png",paste(gsva_string_matched(), collapse = ","), ".png")
-      flnm <- paste0("GSVAsignature.png")
-      #print('printing flnm')
-      #print(flnm)
-      png(filename = flnm, width = 8, height = 6, units = "in", res =300)
-      print(p1)
-      dev.off()
-      
-      
+    #flnm <- paste0("GSVAsignature.png",paste(gsva_string_matched(), collapse = ","), ".png")
+    flnm <- paste0("GSVAsignature.png")
+    #print('printing flnm')
+    #print(flnm)
+    png(filename = flnm, width = 8, height = 6, units = "in", res =300)
+    print(p1)
+    dev.off()
+    
+    
     
     
     return(p1)
@@ -2234,145 +2386,145 @@ output$button_fork_project <-renderUI({
     if(salmon_finished()==0) return({})
     if(multiplegroups()==1) return({})
     #if(proceedWithLoad()==0){
-      deg <- res_DEGs_txi_deseq()
-      #counts <- txi()$abundance
-      
-      #TOFIX add dorothea per-sample composition
-      
-      net <- net()
-      
-      
-      #counts[which(rowSums(counts)!=0),] -> meaningful_counts
-      #meaningful_counts[rownames(deg),] -> meaningful_counts
-      deg -> meaningful_deg
-      
-      print('if rownames(meaningful_counts) are %in% gene2tx')
-      #print(all(rownames(meaningful_counts) %in% gene2tx2name_GRCm39_u_systematic_u_onlyGeneNames[,1]))
-      
-      print('rownames(meaningful_counts):')  
-      #print(head(rownames(meaningful_counts)))
-      
-      print('rownames(meaningful_deg):')  
-      print(head(rownames(meaningful_deg)))
-      
-      #res1 <- data.frame(ENSEMBL=rownames(meaningful_counts), meaningful_counts)
-      #annots1 <- AnnotationDbi::select(OrgDeeBee, keys=res1$ENSEMBL, 
-      #                                 columns="SYMBOL", keytype="ENSEMBL")
-      #meaningful_counts_symbol <- merge(annots1, res1, by.x="ENSEMBL", by.y="ENSEMBL")
-      
-      #rownames(meaningful_deg) <- meaningful_deg$ENSEMBL 
-      #res2 <- data.frame(ENSEMBL=rownames(meaningful_deg), meaningful_deg)
-      #annots2 <- AnnotationDbi::select(OrgDeeBee, keys=res2$ENSEMBL, 
-      #                                 columns="SYMBOL", keytype="ENSEMBL")
-      meaningful_deg_symbol <- meaningful_deg
-      
-      #meaningful_counts_symbol2 <- meaningful_counts_symbol[which(!is.na(meaningful_deg_symbol$stat)),]
-      meaningful_deg_symbol2 <- meaningful_deg_symbol[which(!is.na(meaningful_deg_symbol$stat)),]
-      meaningful_deg_symbol2 <- meaningful_deg_symbol2[!is.na(meaningful_deg_symbol2$SYMBOL),]
-
-      #toKeep <- which(!is.na(meaningful_counts_symbol2$SYMBOL));
-      #meaningful_counts_symbol2 <- meaningful_counts_symbol2[toKeep,];
-      #toKeep2 <- which(!duplicated(meaningful_counts_symbol2$SYMBOL));
-      #meaningful_counts_symbol2 <- meaningful_counts_symbol2[toKeep2,-1]
-      #rownames(meaningful_counts_symbol2) <- meaningful_counts_symbol2$SYMBOL
-      #meaningful_counts_symbol2 <- meaningful_counts_symbol2[,-1];
-      
-      #meaningful_deg_symbol2 <- meaningful_deg_symbol2[toKeep,]
-      #meaningful_deg_symbol2 <- meaningful_deg_symbol2[toKeep2,]
-      #rownames(meaningful_deg_symbol2) <- rownames(meaningful_counts_symbol2)
-      
-      #saveRDS(meaningful_counts_symbol2, file = 'meaningful_counts_symbol2.RDS')
-      #saveRDS(meaningful_deg_symbol2, file = 'meaningful_deg_symbol2.RDS')
-      
-      #rownames(meaningful_counts_symbol2) <- toupper(rownames(meaningful_counts_symbol2))
-      rownames(meaningful_deg_symbol2) <- make.unique(toupper(meaningful_deg_symbol2$SYMBOL))
-      
-      
-      #sample_acts <- decoupleR::run_ulm(mat=meaningful_counts_symbol2, net=net, .source='source', .target='target',
-      #                                  .mor='mor', minsize = 5)
-      contrast_acts <- decoupleR::run_ulm(mat=meaningful_deg_symbol2[,'stat', drop=F], net=net, .source='source', .target='target',
-                                          .mor='mor', minsize = 5)
-      
-      
-      
-      
-      n_tfs <- 25
-      f_contrast_acts <- contrast_acts %>%
-        mutate(rnk = NA)
-      msk <- f_contrast_acts$score > 0
-      f_contrast_acts[msk, 'rnk'] <- rank(-f_contrast_acts[msk, 'score'])
-      f_contrast_acts[!msk, 'rnk'] <- rank(-abs(f_contrast_acts[!msk, 'score']))
-      tfs <- f_contrast_acts %>%
-        arrange(rnk) %>%
-        head(n_tfs) %>%
-        pull(source)
-      f_contrast_acts <- f_contrast_acts %>%
-        filter(source %in% tfs)
-      
-      n_tfs <- 100
-      f_contrast_acts_100 <- contrast_acts %>%
-        mutate(rnk = NA)
-      msk_100 <- f_contrast_acts_100$score > 0
-      f_contrast_acts_100[msk_100, 'rnk'] <- rank(-f_contrast_acts_100[msk_100, 'score'])
-      f_contrast_acts_100[!msk_100, 'rnk'] <- rank(-abs(f_contrast_acts_100[!msk_100, 'score']))
-      tfs_100 <- f_contrast_acts_100 %>%
-        arrange(rnk) %>%
-        head(n_tfs) %>%
-        pull(source)
-      f_contrast_acts_100 <- f_contrast_acts_100 %>%
-        filter(source %in% tfs)
-      
-      saveRDS(f_contrast_acts, file = paste0(ProjFolderFull(),'/dorothea_f_contrast_acts.RDS'))
-      saveRDS(f_contrast_acts_100, file = paste0(ProjFolderFull(),'/dorothea_f_contrast_acts_100.RDS'))
-      as.data.frame(f_contrast_acts_100)->f_contrast_acts_100_df
-      #names(f_contrast_acts_100_df) <- NULL
-      openxlsx::write.xlsx(x = f_contrast_acts_100_df, file = paste0(ProjFolderFull(),'/dorothea_enrichments.xlsx'))
-      # Plot
-      library(ggplot2)
-      g <- ggplot(f_contrast_acts, aes(x = reorder(source, score), y = score)) + 
-        geom_bar(aes(fill = score), stat = "identity") +
-        scale_fill_gradient2(low = "darkblue", high = "indianred", 
-                             mid = "whitesmoke", midpoint = 0) + 
-        theme_minimal() +
-        theme(axis.title = element_text(face = "bold", size = 12),
-              axis.text.x = 
-                element_text(angle = 45, hjust = 1, size =10, face= "bold"),
-              axis.text.y = element_text(size =10, face= "bold"),
-              panel.grid.major = element_blank(), 
-              panel.grid.minor = element_blank()) +
-        xlab("TF")
-      png(paste0(ProjFolderFull(),'/Dorothea_regulons_300dpi.png'), 
-          width = 8, 
-          height = 8,
-          res = 300, units = 'in')
-      print(g)
-      dev.off()
-      
-      
-      files2zip <- list.files(path = ProjFolderFull(), pattern = 'png|xlsx|svg|html|quants.sf', full.names = F, recursive = F)
-      print('printing files2zip')
-      print(files2zip)
-      
-      fls2 <- list.files(path = paste0(ProjFolderFull(), '/trimmed'), pattern = 'html|sf', full.names = F, recursive = T)
-      files2zip_2 <- paste0('trimmed/', fls2)
-      
-      print('printing files2zip_2')
-      print(files2zip_2)
-      
-      print('printing length(fls2)')
-      print(length(fls2))
-      
-      if(length(fls2)==0){
-        filescombined <-files2zip
-      } else {
-        filescombined <- c(files2zip, files2zip_2)
-      }
-      
-      
-      
-      zip::zip(root = ProjFolderFull(), zipfile = 'results.zip', files=filescombined, recurse = F, include_directories = F)
-      click("downloadData")
-      return(g)
+    deg <- res_DEGs_txi_deseq()
+    #counts <- txi()$abundance
+    
+    #TOFIX add dorothea per-sample composition
+    
+    net <- net()
+    
+    
+    #counts[which(rowSums(counts)!=0),] -> meaningful_counts
+    #meaningful_counts[rownames(deg),] -> meaningful_counts
+    deg -> meaningful_deg
+    
+    print('if rownames(meaningful_counts) are %in% gene2tx')
+    #print(all(rownames(meaningful_counts) %in% gene2tx2name_GRCm39_u_systematic_u_onlyGeneNames[,1]))
+    
+    print('rownames(meaningful_counts):')  
+    #print(head(rownames(meaningful_counts)))
+    
+    print('rownames(meaningful_deg):')  
+    print(head(rownames(meaningful_deg)))
+    
+    #res1 <- data.frame(ENSEMBL=rownames(meaningful_counts), meaningful_counts)
+    #annots1 <- AnnotationDbi::select(OrgDeeBee, keys=res1$ENSEMBL, 
+    #                                 columns="SYMBOL", keytype="ENSEMBL")
+    #meaningful_counts_symbol <- merge(annots1, res1, by.x="ENSEMBL", by.y="ENSEMBL")
+    
+    #rownames(meaningful_deg) <- meaningful_deg$ENSEMBL 
+    #res2 <- data.frame(ENSEMBL=rownames(meaningful_deg), meaningful_deg)
+    #annots2 <- AnnotationDbi::select(OrgDeeBee, keys=res2$ENSEMBL, 
+    #                                 columns="SYMBOL", keytype="ENSEMBL")
+    meaningful_deg_symbol <- meaningful_deg
+    
+    #meaningful_counts_symbol2 <- meaningful_counts_symbol[which(!is.na(meaningful_deg_symbol$stat)),]
+    meaningful_deg_symbol2 <- meaningful_deg_symbol[which(!is.na(meaningful_deg_symbol$stat)),]
+    meaningful_deg_symbol2 <- meaningful_deg_symbol2[!is.na(meaningful_deg_symbol2$SYMBOL),]
+    
+    #toKeep <- which(!is.na(meaningful_counts_symbol2$SYMBOL));
+    #meaningful_counts_symbol2 <- meaningful_counts_symbol2[toKeep,];
+    #toKeep2 <- which(!duplicated(meaningful_counts_symbol2$SYMBOL));
+    #meaningful_counts_symbol2 <- meaningful_counts_symbol2[toKeep2,-1]
+    #rownames(meaningful_counts_symbol2) <- meaningful_counts_symbol2$SYMBOL
+    #meaningful_counts_symbol2 <- meaningful_counts_symbol2[,-1];
+    
+    #meaningful_deg_symbol2 <- meaningful_deg_symbol2[toKeep,]
+    #meaningful_deg_symbol2 <- meaningful_deg_symbol2[toKeep2,]
+    #rownames(meaningful_deg_symbol2) <- rownames(meaningful_counts_symbol2)
+    
+    #saveRDS(meaningful_counts_symbol2, file = 'meaningful_counts_symbol2.RDS')
+    #saveRDS(meaningful_deg_symbol2, file = 'meaningful_deg_symbol2.RDS')
+    
+    #rownames(meaningful_counts_symbol2) <- toupper(rownames(meaningful_counts_symbol2))
+    rownames(meaningful_deg_symbol2) <- make.unique(toupper(meaningful_deg_symbol2$SYMBOL))
+    
+    
+    #sample_acts <- decoupleR::run_ulm(mat=meaningful_counts_symbol2, net=net, .source='source', .target='target',
+    #                                  .mor='mor', minsize = 5)
+    contrast_acts <- decoupleR::run_ulm(mat=meaningful_deg_symbol2[,'stat', drop=F], net=net, .source='source', .target='target',
+                                        .mor='mor', minsize = 5)
+    
+    
+    
+    
+    n_tfs <- 25
+    f_contrast_acts <- contrast_acts %>%
+      mutate(rnk = NA)
+    msk <- f_contrast_acts$score > 0
+    f_contrast_acts[msk, 'rnk'] <- rank(-f_contrast_acts[msk, 'score'])
+    f_contrast_acts[!msk, 'rnk'] <- rank(-abs(f_contrast_acts[!msk, 'score']))
+    tfs <- f_contrast_acts %>%
+      arrange(rnk) %>%
+      head(n_tfs) %>%
+      pull(source)
+    f_contrast_acts <- f_contrast_acts %>%
+      filter(source %in% tfs)
+    
+    n_tfs <- 100
+    f_contrast_acts_100 <- contrast_acts %>%
+      mutate(rnk = NA)
+    msk_100 <- f_contrast_acts_100$score > 0
+    f_contrast_acts_100[msk_100, 'rnk'] <- rank(-f_contrast_acts_100[msk_100, 'score'])
+    f_contrast_acts_100[!msk_100, 'rnk'] <- rank(-abs(f_contrast_acts_100[!msk_100, 'score']))
+    tfs_100 <- f_contrast_acts_100 %>%
+      arrange(rnk) %>%
+      head(n_tfs) %>%
+      pull(source)
+    f_contrast_acts_100 <- f_contrast_acts_100 %>%
+      filter(source %in% tfs)
+    
+    saveRDS(f_contrast_acts, file = paste0(ProjFolderFull(),'/dorothea_f_contrast_acts.RDS'))
+    saveRDS(f_contrast_acts_100, file = paste0(ProjFolderFull(),'/dorothea_f_contrast_acts_100.RDS'))
+    as.data.frame(f_contrast_acts_100)->f_contrast_acts_100_df
+    #names(f_contrast_acts_100_df) <- NULL
+    openxlsx::write.xlsx(x = f_contrast_acts_100_df, file = paste0(ProjFolderFull(),'/dorothea_enrichments.xlsx'))
+    # Plot
+    library(ggplot2)
+    g <- ggplot(f_contrast_acts, aes(x = reorder(source, score), y = score)) + 
+      geom_bar(aes(fill = score), stat = "identity") +
+      scale_fill_gradient2(low = "darkblue", high = "indianred", 
+                           mid = "whitesmoke", midpoint = 0) + 
+      theme_minimal() +
+      theme(axis.title = element_text(face = "bold", size = 12),
+            axis.text.x = 
+              element_text(angle = 45, hjust = 1, size =10, face= "bold"),
+            axis.text.y = element_text(size =10, face= "bold"),
+            panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank()) +
+      xlab("TF")
+    png(paste0(ProjFolderFull(),'/Dorothea_regulons_300dpi.png'), 
+        width = 8, 
+        height = 8,
+        res = 300, units = 'in')
+    print(g)
+    dev.off()
+    
+    
+    files2zip <- list.files(path = ProjFolderFull(), pattern = 'png|xlsx|svg|html|quants.sf', full.names = F, recursive = F)
+    print('printing files2zip')
+    print(files2zip)
+    
+    fls2 <- list.files(path = paste0(ProjFolderFull(), '/trimmed'), pattern = 'html|sf', full.names = F, recursive = T)
+    files2zip_2 <- paste0('trimmed/', fls2)
+    
+    print('printing files2zip_2')
+    print(files2zip_2)
+    
+    print('printing length(fls2)')
+    print(length(fls2))
+    
+    if(length(fls2)==0){
+      filescombined <-files2zip
+    } else {
+      filescombined <- c(files2zip, files2zip_2)
+    }
+    
+    
+    
+    zip::zip(root = ProjFolderFull(), zipfile = 'results.zip', files=filescombined, recurse = F, include_directories = F)
+    click("downloadData")
+    return(g)
     #}
     #else {
     #  print("loading dorothea_f_contrast_acts.RDS file")
@@ -2419,124 +2571,124 @@ output$button_fork_project <-renderUI({
     
     #if(proceedWithLoad()==0){
     for (i in 1:length(res_txi_deseq())){
-        tytl[[i]] <- paste(strsplit(names(res_txi_deseq()[i]), split = "_")[[1]][2:4], collapse=' ')
-        deg <- res_DEGs_txi_deseq()[[i]]
-        if(is.null(dim(deg))){
-          g[[i]] <- ggplot()+theme_void()
-        } else {
-          
-          #TOFIX only select certain samples 
-          #TOFIX add dorothea per-sample composition
-          counts <- txi()$abundance
-          
-          #counts[which(rowSums(counts)!=0),] -> meaningful_counts
-          #meaningful_counts[rownames(deg),] -> meaningful_counts
-          deg -> meaningful_deg
-          
-          #print('if rownames(meaningful_counts) are %in% gene2tx')
-          #print(all(rownames(meaningful_counts) %in% gene2tx2name_GRCm39_u_systematic_u_onlyGeneNames[,1]))
-          
-          print('rownames(meaningful_counts):')  
-          #print(head(rownames(meaningful_counts)))
-          
-          #print('rownames(meaningful_deg):')  
-          #print(head(rownames(meaningful_deg)))
-          
-          #res1 <- data.frame(ENSEMBL=rownames(meaningful_counts), meaningful_counts)
-          #annots1 <- AnnotationDbi::select(OrgDeeBee, keys=res1$ENSEMBL, 
-          #                                 columns="SYMBOL", keytype="ENSEMBL")
-          #meaningful_counts_symbol <- merge(annots1, res1, by.x="ENSEMBL", by.y="ENSEMBL")
-          
-          #rownames(meaningful_deg) <- meaningful_deg$ENSEMBL 
-          #
-          #res2 <- data.frame(ENSEMBL=rownames(meaningful_deg), meaningful_deg)
-          #annots2 <- AnnotationDbi::select(OrgDeeBee, keys=res2$ENSEMBL, 
-          #                                 columns="SYMBOL", keytype="ENSEMBL")
-          #meaningful_deg_symbol <- merge(annots2, res2, by.x="ENSEMBL", by.y="ENSEMBL")
-          meaningful_deg_symbol <- meaningful_deg
-          
-          #meaningful_counts_symbol2 <- meaningful_counts_symbol[which(!is.na(meaningful_deg_symbol$stat)),]
-          meaningful_deg_symbol2 <- meaningful_deg_symbol[which(!is.na(meaningful_deg_symbol$stat)),]
-          meaningful_deg_symbol2 <- meaningful_deg_symbol2[!is.na(meaningful_deg_symbol2$SYMBOL),]
-          
-          #toKeep <- which(!is.na(meaningful_counts_symbol2$SYMBOL));
-          #meaningful_counts_symbol2 <- meaningful_counts_symbol2[toKeep,];
-          #toKeep2 <- which(!duplicated(meaningful_counts_symbol2$SYMBOL));
-          #meaningful_counts_symbol2 <- meaningful_counts_symbol2[toKeep2,-1]
-          #rownames(meaningful_counts_symbol2) <- meaningful_counts_symbol2$SYMBOL
-          #meaningful_counts_symbol2 <- meaningful_counts_symbol2[,-1];
-          
-          #meaningful_deg_symbol2 <- meaningful_deg_symbol2[toKeep,]
-          #meaningful_deg_symbol2 <- meaningful_deg_symbol2[toKeep2,]
-          #rownames(meaningful_deg_symbol2) <- rownames(meaningful_counts_symbol2)
-          
-          #saveRDS(meaningful_counts_symbol2, file = 'meaningful_counts_symbol2.RDS')
-          #saveRDS(meaningful_deg_symbol2, file = 'meaningful_deg_symbol2.RDS')
-          
-          # rownames(meaningful_counts_symbol2) <- toupper(rownames(meaningful_counts_symbol2))
-          meaningful_deg_symbol2$SYMBOL -> vec
-          vec[is.na(vec)] <- 'none'
-          rownames(meaningful_deg_symbol2) <- make.unique(toupper(vec))
-          
-          
-          #  sample_acts <- decoupleR::run_ulm(mat=meaningful_counts_symbol2, net=net, .source='source', .target='target',
-          #                                    .mor='mor', minsize = 5)
-          contrast_acts <- decoupleR::run_ulm(mat=meaningful_deg_symbol2[,'stat', drop=F], net=net, .source='source', .target='target',
-                                              .mor='mor', minsize = 5)
-          
-          n_tfs <- 25
-          f_contrast_acts <- contrast_acts %>%
-            mutate(rnk = NA)
-          msk <- f_contrast_acts$score > 0
-          f_contrast_acts[msk, 'rnk'] <- rank(-f_contrast_acts[msk, 'score'])
-          f_contrast_acts[!msk, 'rnk'] <- rank(-abs(f_contrast_acts[!msk, 'score']))
-          tfs <- f_contrast_acts %>%
-            arrange(rnk) %>%
-            head(n_tfs) %>%
-            pull(source)
-          f_contrast_acts <- f_contrast_acts %>%
-            filter(source %in% tfs)
-          
-          n_tfs <- 100
-          f_contrast_acts_100 <- contrast_acts %>%
-            mutate(rnk = NA)
-          msk_100 <- f_contrast_acts_100$score > 0
-          f_contrast_acts_100[msk_100, 'rnk'] <- rank(-f_contrast_acts_100[msk_100, 'score'])
-          f_contrast_acts_100[!msk_100, 'rnk'] <- rank(-abs(f_contrast_acts_100[!msk_100, 'score']))
-          tfs_100 <- f_contrast_acts_100 %>%
-            arrange(rnk) %>%
-            head(n_tfs) %>%
-            pull(source)
-          f_contrast_acts_100 <- f_contrast_acts_100 %>%
-            filter(source %in% tfs)
-          
-          f_contrast_acts_100_list[[i]] <- f_contrast_acts_100
-          f_contrast_acts_list[[i]] <- f_contrast_acts
-          
-          message('line 2386 ok')
-          
-          # Plot
-          library(ggplot2)
-          g[[i]] <- ggplot(f_contrast_acts, aes(x = reorder(source, score), y = score)) + 
-            geom_bar(aes(fill = score), stat = "identity") +
-            scale_fill_gradient2(low = "darkblue", high = "indianred", 
-                                 mid = "whitesmoke", midpoint = 0) + 
-            theme_minimal() +
-            theme(axis.title = element_text(face = "bold", size = 12),
-                  axis.text.x = 
-                    element_text(angle = 45, hjust = 1, size =10, face= "bold"),
-                  axis.text.y = element_text(size =10, face= "bold"),
-                  panel.grid.major = element_blank(), 
-                  panel.grid.minor = element_blank()) +
-            xlab("TF")
-          png(paste0(ProjFolderFull(),'/Dorothea_regulons_',tytl[[i]],'_300dpi.png'), 
-              width = 8, 
-              height = 8,
-              res = 300, units = 'in')
-          print(g[[i]])
-          dev.off()
-        }
+      tytl[[i]] <- paste(strsplit(names(res_txi_deseq()[i]), split = "_")[[1]][2:4], collapse=' ')
+      deg <- res_DEGs_txi_deseq()[[i]]
+      if(is.null(dim(deg))){
+        g[[i]] <- ggplot()+theme_void()
+      } else {
+        
+        #TOFIX only select certain samples 
+        #TOFIX add dorothea per-sample composition
+        counts <- txi()$abundance
+        
+        #counts[which(rowSums(counts)!=0),] -> meaningful_counts
+        #meaningful_counts[rownames(deg),] -> meaningful_counts
+        deg -> meaningful_deg
+        
+        #print('if rownames(meaningful_counts) are %in% gene2tx')
+        #print(all(rownames(meaningful_counts) %in% gene2tx2name_GRCm39_u_systematic_u_onlyGeneNames[,1]))
+        
+        print('rownames(meaningful_counts):')  
+        #print(head(rownames(meaningful_counts)))
+        
+        #print('rownames(meaningful_deg):')  
+        #print(head(rownames(meaningful_deg)))
+        
+        #res1 <- data.frame(ENSEMBL=rownames(meaningful_counts), meaningful_counts)
+        #annots1 <- AnnotationDbi::select(OrgDeeBee, keys=res1$ENSEMBL, 
+        #                                 columns="SYMBOL", keytype="ENSEMBL")
+        #meaningful_counts_symbol <- merge(annots1, res1, by.x="ENSEMBL", by.y="ENSEMBL")
+        
+        #rownames(meaningful_deg) <- meaningful_deg$ENSEMBL 
+        #
+        #res2 <- data.frame(ENSEMBL=rownames(meaningful_deg), meaningful_deg)
+        #annots2 <- AnnotationDbi::select(OrgDeeBee, keys=res2$ENSEMBL, 
+        #                                 columns="SYMBOL", keytype="ENSEMBL")
+        #meaningful_deg_symbol <- merge(annots2, res2, by.x="ENSEMBL", by.y="ENSEMBL")
+        meaningful_deg_symbol <- meaningful_deg
+        
+        #meaningful_counts_symbol2 <- meaningful_counts_symbol[which(!is.na(meaningful_deg_symbol$stat)),]
+        meaningful_deg_symbol2 <- meaningful_deg_symbol[which(!is.na(meaningful_deg_symbol$stat)),]
+        meaningful_deg_symbol2 <- meaningful_deg_symbol2[!is.na(meaningful_deg_symbol2$SYMBOL),]
+        
+        #toKeep <- which(!is.na(meaningful_counts_symbol2$SYMBOL));
+        #meaningful_counts_symbol2 <- meaningful_counts_symbol2[toKeep,];
+        #toKeep2 <- which(!duplicated(meaningful_counts_symbol2$SYMBOL));
+        #meaningful_counts_symbol2 <- meaningful_counts_symbol2[toKeep2,-1]
+        #rownames(meaningful_counts_symbol2) <- meaningful_counts_symbol2$SYMBOL
+        #meaningful_counts_symbol2 <- meaningful_counts_symbol2[,-1];
+        
+        #meaningful_deg_symbol2 <- meaningful_deg_symbol2[toKeep,]
+        #meaningful_deg_symbol2 <- meaningful_deg_symbol2[toKeep2,]
+        #rownames(meaningful_deg_symbol2) <- rownames(meaningful_counts_symbol2)
+        
+        #saveRDS(meaningful_counts_symbol2, file = 'meaningful_counts_symbol2.RDS')
+        #saveRDS(meaningful_deg_symbol2, file = 'meaningful_deg_symbol2.RDS')
+        
+        # rownames(meaningful_counts_symbol2) <- toupper(rownames(meaningful_counts_symbol2))
+        meaningful_deg_symbol2$SYMBOL -> vec
+        vec[is.na(vec)] <- 'none'
+        rownames(meaningful_deg_symbol2) <- make.unique(toupper(vec))
+        
+        
+        #  sample_acts <- decoupleR::run_ulm(mat=meaningful_counts_symbol2, net=net, .source='source', .target='target',
+        #                                    .mor='mor', minsize = 5)
+        contrast_acts <- decoupleR::run_ulm(mat=meaningful_deg_symbol2[,'stat', drop=F], net=net, .source='source', .target='target',
+                                            .mor='mor', minsize = 5)
+        
+        n_tfs <- 25
+        f_contrast_acts <- contrast_acts %>%
+          mutate(rnk = NA)
+        msk <- f_contrast_acts$score > 0
+        f_contrast_acts[msk, 'rnk'] <- rank(-f_contrast_acts[msk, 'score'])
+        f_contrast_acts[!msk, 'rnk'] <- rank(-abs(f_contrast_acts[!msk, 'score']))
+        tfs <- f_contrast_acts %>%
+          arrange(rnk) %>%
+          head(n_tfs) %>%
+          pull(source)
+        f_contrast_acts <- f_contrast_acts %>%
+          filter(source %in% tfs)
+        
+        n_tfs <- 100
+        f_contrast_acts_100 <- contrast_acts %>%
+          mutate(rnk = NA)
+        msk_100 <- f_contrast_acts_100$score > 0
+        f_contrast_acts_100[msk_100, 'rnk'] <- rank(-f_contrast_acts_100[msk_100, 'score'])
+        f_contrast_acts_100[!msk_100, 'rnk'] <- rank(-abs(f_contrast_acts_100[!msk_100, 'score']))
+        tfs_100 <- f_contrast_acts_100 %>%
+          arrange(rnk) %>%
+          head(n_tfs) %>%
+          pull(source)
+        f_contrast_acts_100 <- f_contrast_acts_100 %>%
+          filter(source %in% tfs)
+        
+        f_contrast_acts_100_list[[i]] <- f_contrast_acts_100
+        f_contrast_acts_list[[i]] <- f_contrast_acts
+        
+        message('line 2386 ok')
+        
+        # Plot
+        library(ggplot2)
+        g[[i]] <- ggplot(f_contrast_acts, aes(x = reorder(source, score), y = score)) + 
+          geom_bar(aes(fill = score), stat = "identity") +
+          scale_fill_gradient2(low = "darkblue", high = "indianred", 
+                               mid = "whitesmoke", midpoint = 0) + 
+          theme_minimal() +
+          theme(axis.title = element_text(face = "bold", size = 12),
+                axis.text.x = 
+                  element_text(angle = 45, hjust = 1, size =10, face= "bold"),
+                axis.text.y = element_text(size =10, face= "bold"),
+                panel.grid.major = element_blank(), 
+                panel.grid.minor = element_blank()) +
+          xlab("TF")
+        png(paste0(ProjFolderFull(),'/Dorothea_regulons_',tytl[[i]],'_300dpi.png'), 
+            width = 8, 
+            height = 8,
+            res = 300, units = 'in')
+        print(g[[i]])
+        dev.off()
       }
+    }
     
     message('line 2411 ok')
     names(f_contrast_acts_100_list) <- tytl
@@ -2547,34 +2699,34 @@ output$button_fork_project <-renderUI({
     
     f_contrast_acts_100_list_toPrint <- f_contrast_acts_100_list
     names(f_contrast_acts_100_list_toPrint) <- substr(x = names(f_contrast_acts_100_list_toPrint), start = 1, stop = 30)
-      openxlsx::write.xlsx(x = f_contrast_acts_100_list_toPrint, file = paste0(ProjFolderFull(),'/dorothea_enrichments.xlsx'))
-      saveRDS(g, file = paste0(ProjFolderFull(),'/dorothea_plots.RDS'))
-      
-      files2zip <- list.files(path = ProjFolderFull(), pattern = 'png|xlsx|svg|html|quants.sf', full.names = F, recursive = F)
-      print('printing files2zip')
-      print(files2zip)
-      
-      fls2 <- list.files(path = paste0(ProjFolderFull(), '/trimmed'), pattern = 'html|sf', full.names = F, recursive = T)
-      files2zip_2 <- paste0('trimmed/', fls2)
-      
-      print('printing files2zip_2')
-      print(files2zip_2)
-      
-      print('printing length(fls2)')
-      print(length(fls2))
-      
-      if(length(fls2)==0){
-        filescombined <-files2zip
-      } else {
-        filescombined <- c(files2zip, files2zip_2)
-      }
-      
-      
-      
-      zip::zip(root = ProjFolderFull(), zipfile = 'results.zip', files=filescombined, recurse = F, include_directories = F)
-      click("downloadData")
-      
-      
+    openxlsx::write.xlsx(x = f_contrast_acts_100_list_toPrint, file = paste0(ProjFolderFull(),'/dorothea_enrichments.xlsx'))
+    saveRDS(g, file = paste0(ProjFolderFull(),'/dorothea_plots.RDS'))
+    
+    files2zip <- list.files(path = ProjFolderFull(), pattern = 'png|xlsx|svg|html|quants.sf', full.names = F, recursive = F)
+    print('printing files2zip')
+    print(files2zip)
+    
+    fls2 <- list.files(path = paste0(ProjFolderFull(), '/trimmed'), pattern = 'html|sf', full.names = F, recursive = T)
+    files2zip_2 <- paste0('trimmed/', fls2)
+    
+    print('printing files2zip_2')
+    print(files2zip_2)
+    
+    print('printing length(fls2)')
+    print(length(fls2))
+    
+    if(length(fls2)==0){
+      filescombined <-files2zip
+    } else {
+      filescombined <- c(files2zip, files2zip_2)
+    }
+    
+    
+    
+    zip::zip(root = ProjFolderFull(), zipfile = 'results.zip', files=filescombined, recurse = F, include_directories = F)
+    click("downloadData")
+    
+    
     #} else {
     #  print("loading dorothea_plots.RDS file")
     #  g <- readRDS(paste0(ProjFolderFull(), '/dorothea_plots.RDS'))
@@ -2588,12 +2740,12 @@ output$button_fork_project <-renderUI({
     #  click("downloadData")
     #  
     #}
-  #  
-  #  for (j in 1:length(res_txi_deseq())){
-  #    tytl[[j]] <- strsplit(res_txi_deseq()[[j]]@elementMetadata[5,2], split = ": ")[[1]][2]
-  #  }
+    #  
+    #  for (j in 1:length(res_txi_deseq())){
+    #    tytl[[j]] <- strsplit(res_txi_deseq()[[j]]@elementMetadata[5,2], split = ": ")[[1]][2]
+    #  }
     
-   
+    
     nTabs = length(g)
     myTabs = lapply(1: nTabs, function(x){tabPanel(tytl[[x]], renderPlot(g[[x]], height = 1500))});
     
@@ -2613,6 +2765,21 @@ output$button_fork_project <-renderUI({
     filename = 'results.zip', 
     content = function(file) {
       file.copy(paste0(ProjFolderFull(),'/results.zip'), file)
+    },
+    contentType = "application/zip"
+  )
+  
+  output$downloadDotPlot <- downloadHandler(
+    filename = 'GO_dotplot_custom_number_of_Terms_300dpi.png', 
+    content = function(file) {
+      file.copy(paste0(ProjFolderFull(),'/GO_dotplot_custom_number_of_Terms_300dpi.png'), file)
+    },
+    contentType = 'image/png'
+  )
+  output$downloadDotPlots <- downloadHandler(
+    filename = 'Plots_custom.zip', 
+    content = function(file) {
+      file.copy(paste0(ProjFolderFull(),'/Plots_custom.zip'), file)
     },
     contentType = "application/zip"
   )
