@@ -1355,7 +1355,7 @@ server <- function(input, output, session){
       print(TPM_filelist)
       txdb <- readRDS(txdbPath())
       txi_ <- tximport::tximport(TPM_filelist, type = "salmon", tx2gene = txdb, ignoreTxVersion = T)
-      5
+      saveRDS(txi_, file = paste0(ProjFolderFull(),'/txi.RDS'))
       return(txi_)
     } else {
       salmon_finished(1)
